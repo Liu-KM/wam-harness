@@ -1,0 +1,42 @@
+[project]
+name = "wam-harness"
+version = "0.0.0"
+description = "A lightweight inference harness for world-action models."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "TBD" }
+authors = [
+  { name = "TBD" }
+]
+keywords = [
+  "world-action-model",
+  "robotics",
+  "inference",
+  "benchmark",
+  "harness"
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.8"
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
