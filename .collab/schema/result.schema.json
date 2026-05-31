@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Task Result",
+  "description": "Codex 完成一张任务卡后必须回交的结构化结果。供 Claude 验收。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task_id", "status", "summary", "files_changed", "commands_run", "test_results"],
+  "properties": {
+    "task_id": { "type": "string", "description": "任务卡编号，如 001" },
+    "status": {
+      "type": "string",
+      "enum": ["done", "partial", "blocked"],
+      "description": "done=自认全部完成；partial=部分完成；blocked=被阻塞需裁决"
+    },
+    "summary": { "type": "string", "description": "一句话说明本次做了什么" },
+    "files_changed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": { "type": "string", "enum": ["added", "modified", "deleted"] },
+          "why": { "type": "string" }
+        }
+      }
+    },
+    "commands_run": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "实际跑过的命令，至少应含 ruff 与 pytest"
+    },
+    "test_results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failed"],
+      "properties": {
+        "passed": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "details": { "type": "string" }
+      }
+    },
+    "tests_added": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Codex 自己新增的测试，格式 path::test_name"
+    },
+    "interface_deviations": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "若动了 Claude 定义的接口/契约，必须在此申报，否则视为越界"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "需要 Claude 裁决的事项"
+    },
+    "branch": { "type": "string", "description": "提交所在分支名" },
+    "commit": { "type": "string", "description": "提交的 commit sha 或信息" }
+  }
+}

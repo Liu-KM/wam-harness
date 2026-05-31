@@ -232,6 +232,24 @@ Examples:
 - bounded visual metric or artifact inspection for future frames.
 - explicit "not comparable" only for exploratory measurements.
 
+#### Output Persistence And Alignment
+
+A correctness gate is only meaningful if baseline and variant outputs can actually
+be compared. The harness must therefore make outputs comparable by construction:
+
+- **Shared seed.** Baseline and variant use the same `seed`, so observations are
+  produced in the same order and any RNG inside the backend is controlled. Two runs
+  that did not share a seed are `not_comparable` for numeric gates.
+- **Output artifacts.** Action chunks (and optional future frames / values) used for
+  the gate are persisted under the run output directory, not embedded in traces.
+  Traces store the artifact path plus shape metadata (see `docs/trace_schema.md`).
+- **Alignment key.** Outputs are aligned by `(episode_id, step_id, replan_id)` so the
+  comparator matches the same decision point across runs rather than by array index.
+- **Comparison event.** The comparator emits a `comparison_result` trace event with
+  the gate type, per-side statistics, the measured difference, the noise floor, and a
+  final `decision` (`useful` / `neutral` / `regression` / `not_comparable`). See
+  `docs/measurement.md` for how the decision is computed.
+
 ### Failures
 
 Failures should be trace events, not only terminal logs.
@@ -263,6 +281,20 @@ Required fields:
 - `correctness_gate`: how outputs are compared.
 - `decision_rule`: what result counts as useful, neutral, or negative.
 
+Measurement protocol fields (see `docs/measurement.md` for semantics):
+
+- `seed`: integer seed controlling RNG and observation order. Baseline and variant
+  must share the same seed so inputs match step-for-step.
+- `warmup_iters`: number of leading inference calls discarded before statistics.
+- `repetitions`: number of post-warmup samples per measured path.
+- `runs`: number of independent process runs used to estimate run-to-run noise.
+- `min_effect`: minimum relative change on the primary metric below which the
+  result is judged `neutral` regardless of significance.
+
+These fields make `decision_rule` reproducible rather than anecdotal. A variant
+that improves the primary metric by less than `min_effect`, or by less than the
+run-to-run noise floor, is `neutral`, not `useful`.
+
 Example:
 
 ```yaml
@@ -289,6 +321,61 @@ decision_rule: Useful only if p95 model latency improves without unacceptable
   memory growth or output drift.
 ```
 
+## Characterization Experiment Contract
+
+Before any baseline-vs-variant experiment, the harness must be able to answer the
+prior question: *does the pressure this idea targets actually exist in this WAM
+workload?* That question is answered by a **characterization** experiment, which
+profiles a single configuration without a variant.
+
+A characterization experiment is a first-class run type, not a degenerate
+baseline-vs-variant. It has no `variant`, no `correctness_gate`, and no
+`decision_rule` in the useful/neutral/regression sense. Its job is to measure
+where time and memory go, so an `existence_check` becomes data-backed.
+
+Required fields:
+
+- `idea`: the systems idea this characterization informs (or `none` for general
+  profiling).
+- `mode`: `characterization`.
+- `target`: backend + workload being profiled.
+- `existence_check`: the specific question being answered (e.g. "does model_ms
+  carry non-trivial CPU launch overhead?").
+- `metrics`: which measurements decide whether the pressure exists.
+- `seed`, `warmup_iters`, `repetitions`, `runs`: same measurement protocol fields.
+
+Output:
+
+- A characterization run produces the same trace schema as any other run, plus a
+  per-stage breakdown (preprocess / model / postprocess / env_step shares of
+  total) and a memory profile. It emits no `comparison_result` event.
+
+Example:
+
+```yaml
+idea: cuda_graph
+mode: characterization
+target:
+  backend: fastwam
+  workload: open_loop
+existence_check: Is repeated replan inference launch-bound rather than
+  preprocess- or env-bound?
+metrics:
+  - model_ms_p50
+  - model_ms_p95
+  - stage_share: [preprocess, model, postprocess, env_step]
+  - cuda_peak_allocated_mb
+seed: 0
+warmup_iters: 3
+repetitions: 30
+runs: 3
+```
+
+A baseline-vs-variant experiment for an idea should not be run until a
+characterization experiment shows its `existence_check` holds. An idea whose
+pressure does not exist in the workload is recorded as `not_applicable`, which is
+itself a useful research result.
+
 ## Minimal Runtime Info
 
 Runtime info should be small at first. It is not a full model taxonomy.
@@ -301,6 +388,7 @@ runtime_info:
   mode: local
   device: cuda:0
   dtype: bf16
+  seed: 0
   optimization_flags:
     torch_compile: false
     cuda_graph: false
