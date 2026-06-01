@@ -34,13 +34,15 @@ SCHEMA=".collab/schema/result.schema.json"
 RESULT=".collab/results/${TASK_ID}.json"
 EVENTS=".collab/results/${TASK_ID}.events.jsonl"
 mkdir -p .collab/results
+mkdir -p /tmp/uv-cache  # sandbox 默认 cache 只读，给 Codex 一个可写的 uv cache
 
 PREAMBLE="你是本仓库的实现方（Codex）。严格遵守 .collab/WORKFLOW.md 的护栏：
 不得修改 Claude 定义的契约文档与接口签名（docs/contract.md / interfaces.md / measurement.md /
-trace_schema.md / config_schema.md）；自行编写测试覆盖施工卡的验收清单；
-完成后运行 'uv run ruff check .' 与 'uv run pytest' 并确保通过；
-在分支 codex/<slug>-s4-NN 提交一个聚焦 commit，信息含论文 slug 与卡号。
-你的最终回复必须符合给定的 output schema。下面是施工卡：
+trace_schema.md / config_schema.md）；自行编写测试覆盖施工卡的验收清单。
+沙箱约定：默认 uv cache 与 .git 均只读。跑 uv 命令时一律加前缀 UV_CACHE_DIR=/tmp/uv-cache，
+例如 'UV_CACHE_DIR=/tmp/uv-cache uv run ruff check .' 与 'UV_CACHE_DIR=/tmp/uv-cache uv run pytest'，
+并确保两者通过。只修改工作树文件，不要执行 git add / commit / switch（.git 只读是预期的；
+分支与提交由 Claude 验收后进行）。你的最终回复必须符合给定的 output schema。下面是施工卡：
 
 "
 

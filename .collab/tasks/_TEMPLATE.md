@@ -50,5 +50,6 @@ Codex 必须让以下每条成立，并**自行编写测试**覆盖它们：
 
 ## 交付方式
 
-- 在分支 `codex/<slug>-s4-NN` 提交一个聚焦 commit，信息含论文 slug 与卡号。
-- 回交结构化结果到 `.collab/results/<slug>-S4-NN.json`（符合 `../schema/result.schema.json`）。
+- 只修改工作树文件，**不要执行 git 操作**（.git 在沙箱内只读；提交由 Claude 验收后进行）。
+- 跑 uv 命令时加前缀 `UV_CACHE_DIR=/tmp/uv-cache`（沙箱默认 cache 只读）。
+- 最终回复按 output schema 结构化回交（脚本保存到 `.collab/results/<slug>-S4-NN.json`）。

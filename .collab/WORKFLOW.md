@@ -19,6 +19,8 @@ Codex 默认使用**最强模型 + 最强推理等级**。由 `scripts/run_codex
 - `model_reasoning_effort = "xhigh"`（最高推理等级，枚举值稳定，显式钉死）。
 - `model`：默认 `gpt-5.5`（当前最强）；可用环境变量 `CODEX_MODEL` 覆盖，便于将来升级到更强模型而不改脚本。
 - 非交互：`-s workspace-write`、`approval_policy="never"`、`--output-schema` 强约束回交格式。
+- 沙箱行为（已实测）：`workspace-write` 下 `.git` 与默认 uv cache 只读。因此 **Codex 不碰 git**
+  （提交由 Claude 验收后进行），跑 uv 命令时用 `UV_CACHE_DIR=/tmp/uv-cache`（脚本已预置）。
 
 ## 不可逾越的护栏
 
@@ -36,10 +38,10 @@ Codex 默认使用**最强模型 + 最强推理等级**。由 `scripts/run_codex
 施工卡只在复现阶段（S4）产生，每张卡绑定一篇论文。
 
 ```
-① Claude 写施工卡        → .collab/tasks/<slug>-S4-NN-<slot>.md
-② Claude 调 codex exec    → scripts/run_codex_task.sh <slug>-S4-NN
-③ Codex 回交结构化结果     → .collab/results/<id>.json   (符合 schema/result.schema.json)
-                            + .collab/results/<id>.events.jsonl (全量事件流)
+① Claude 写施工卡 + 建卡分支 → .collab/tasks/<slug>-S4-NN-<slot>.md；git checkout -b codex/<slug>-s4-NN
+② Claude 调 codex exec       → scripts/run_codex_task.sh <slug>-S4-NN
+③ Codex 改工作树 + 回交       → 改源码/测试（不碰 git）；结构化回交
+                              .collab/results/<id>.json (符合 schema) + <id>.events.jsonl
 ④ Claude 验收（门禁）：
      uv run ruff check .        必须通过
      uv run pytest              必须全绿
@@ -47,7 +49,8 @@ Codex 默认使用**最强模型 + 最强推理等级**。由 `scripts/run_codex
      审 Codex 自写测试的覆盖度    覆盖施工卡的验收清单
      (可选) codex exec review   独立第二眼
 ⑤ 判定：
-     通过 → TaskUpdate 标完成；更新 PROGRESS.md；进入下一张卡 / 下一阶段
+     通过 → Claude 提交聚焦 commit（信息含 slug 与卡号）；TaskUpdate 标完成；
+            更新 PROGRESS.md；进入下一张卡 / 下一阶段
      不过 → 写返工说明，codex exec resume --last 带上下文重做
             （最多 3 轮；超出则 Claude 接管或上报 User）
 ```
@@ -60,9 +63,9 @@ Codex 默认使用**最强模型 + 最强推理等级**。由 `scripts/run_codex
 
 ## git 约定
 
-- 每篇论文的复现在独立分支：`codex/<slug>-s4`（或按卡 `codex/<slug>-s4-NN`）。
-- Codex 完成施工卡后提交一个聚焦 commit，信息含论文 slug 与卡号。
-- Claude 审 diff 通过后合回主线；不直接推 main。
+- 每篇论文的复现在独立分支：`codex/<slug>-s4`（或按卡 `codex/<slug>-s4-NN`），由 Claude 创建。
+- **Codex 不碰 git**（沙箱内 .git 只读）：它只改工作树并结构化回交。
+- 验收通过后由 **Claude 提交**一个聚焦 commit（信息含 slug 与卡号），审 diff 后合回主线；不直接推 main。
 - 研究文档（S0–S3、S5 的 markdown）由 Claude 直接提交到工作分支。
 
 ## 目录约定
