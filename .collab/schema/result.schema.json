@@ -1,10 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Codex Task Result",
-  "description": "Codex 完成一张任务卡后必须回交的结构化结果。供 Claude 验收。",
+  "description": "Codex 完成一张任务卡后必须回交的结构化结果。供 Claude 验收。strict 模式：所有键均在 required，可选字段用 null 联合类型表达。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["task_id", "status", "summary", "files_changed", "commands_run", "test_results"],
+  "required": [
+    "task_id", "status", "summary", "files_changed", "commands_run",
+    "test_results", "tests_added", "interface_deviations", "assumptions",
+    "open_questions", "branch", "commit"
+  ],
   "properties": {
     "task_id": { "type": "string", "description": "任务卡编号，如 001" },
     "status": {
@@ -18,11 +22,11 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "kind"],
+        "required": ["path", "kind", "why"],
         "properties": {
           "path": { "type": "string" },
           "kind": { "type": "string", "enum": ["added", "modified", "deleted"] },
-          "why": { "type": "string" }
+          "why": { "type": ["string", "null"] }
         }
       }
     },
@@ -34,11 +38,11 @@
     "test_results": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["passed", "failed"],
+      "required": ["passed", "failed", "details"],
       "properties": {
         "passed": { "type": "integer" },
         "failed": { "type": "integer" },
-        "details": { "type": "string" }
+        "details": { "type": ["string", "null"] }
       }
     },
     "tests_added": {
@@ -60,7 +64,7 @@
       "items": { "type": "string" },
       "description": "需要 Claude 裁决的事项"
     },
-    "branch": { "type": "string", "description": "提交所在分支名" },
-    "commit": { "type": "string", "description": "提交的 commit sha 或信息" }
+    "branch": { "type": ["string", "null"], "description": "提交所在分支名" },
+    "commit": { "type": ["string", "null"], "description": "提交的 commit sha 或信息" }
   }
 }

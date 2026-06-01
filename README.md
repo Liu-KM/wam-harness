@@ -14,6 +14,14 @@ model-specific code behind backends.
 - Keep model-specific backends separate from the core runner.
 - Start with fake and open-loop workloads before adding real WAM checkpoints.
 
+## Research Workflow
+
+The unit of work is reproducing one LLM inference-systems paper onto WAM
+inference, driven per paper through a six-stage pipeline: understand the source
+idea, check whether its pressure exists in WAM, design the transfer, reproduce
+it, then write up new findings. See `.collab/PIPELINE.md` for the pipeline and
+`.collab/WORKFLOW.md` for the Claude/Codex collaboration model.
+
 ## Non-Goals For The First Version
 
 - Training.

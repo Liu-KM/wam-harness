@@ -10,6 +10,15 @@ The goal is not to copy surface features from LLM serving frameworks. The goal
 is to test whether the reason an idea worked for LLMs still exists in WAM
 workloads.
 
+## Role In The Research Pipeline
+
+The actual unit of work in this repo is *reproducing one LLM systems paper onto
+WAM*, tracked per paper through stages S0-S5 in `.collab/PIPELINE.md`. This
+document is the **idea reserve pool**: each card below is a condensed example of
+the understanding (S1), existence check (S2), and transfer design (S3) for one
+idea. When the user brings a concrete paper, it gets its own `papers/<slug>/`
+pipeline rather than a new entry here.
+
 ## Idea Card Template
 
 Each idea should use this structure:
