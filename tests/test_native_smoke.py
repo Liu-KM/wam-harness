@@ -6,12 +6,12 @@ from wam_harness.backends.fastwam import FastWAMBackend
 from wam_harness.cli import build_parser, main
 from wam_harness.core.action_contract import ActionContractError
 from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.backends.native_support.readiness import NativePreflightError
 from wam_harness.backends.native_support.smoke import (
     NativeSmokeRunner,
     NativeSmokeRunnerError,
     native_smoke_manifest,
 )
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.types import (
     ActionChunk,
@@ -96,7 +96,7 @@ def test_processors_provide_native_smoke_observations() -> None:
 def test_native_smoke_runner_fails_clearly_without_upstream_repo(tmp_path) -> None:
     runner = NativeSmokeRunner()
 
-    with pytest.raises(NativePreflightError, match="fastwam native readiness is blocked"):
+    with pytest.raises(PreflightError, match="fastwam preflight is blocked"):
         runner.run("fastwam-libero", trace_dir=tmp_path, upstream_dir=tmp_path / "missing")
 
     trace_paths = list(tmp_path.glob("*/trace.jsonl"))
@@ -143,7 +143,7 @@ def test_cli_native_smoke_routes_to_native_backend(tmp_path, capsys) -> None:
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "error: fastwam native readiness is blocked" in captured.err
+    assert "error: fastwam preflight is blocked" in captured.err
     trace_paths = list(tmp_path.glob("*/trace.jsonl"))
     assert len(trace_paths) == 1
     assert f"trace: {trace_paths[0]}" in captured.err
@@ -172,7 +172,7 @@ def test_native_smoke_require_ready_rejects_runtime_asset_warning(tmp_path) -> N
     checkpoint.write_bytes(b"checkpoint")
     dataset_stats.write_text("{}", encoding="utf-8")
 
-    with pytest.raises(NativePreflightError, match="fastwam native readiness is warning"):
+    with pytest.raises(PreflightError, match="fastwam preflight is warning"):
         NativeSmokeRunner(registry=registry).run(
             "fastwam-libero",
             trace_dir=tmp_path / "runs",

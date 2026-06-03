@@ -10,18 +10,12 @@ from pathlib import Path
 from typing import Any
 
 from wam_harness.core.action_contract import ActionContractError
-from wam_harness.core.backend_capabilities import (
-    action_contract_enabled,
-    preflight_report,
-    runtime_contract_payload,
-)
-from wam_harness.core.inference_trace import inference_result_payload
-from wam_harness.core.memory import memory_snapshot
+from wam_harness.core.backend_session import BackendSession
 from wam_harness.core.observation_io import (
     dict_or_empty as _dict_or_empty,
     observation_from_payload as _observation_from_payload,
 )
-from wam_harness.core.preflight import PreflightError, assert_preflight
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.runtime import SERVE_SPEC
 from wam_harness.core.tracing import TraceWriter
@@ -59,6 +53,8 @@ class ServeApp:
             self.manifest, enabled_opts or []
         )
         self.backend = self.registry.create_backend(self.manifest, self.profiles)
+        self.processor = None
+        self.session: BackendSession | None = None
         self.trace = TraceWriter(self.trace_path, self.run_id, self.backend.runtime_info())
         self.trace.write(
             "serve_start",
@@ -70,34 +66,14 @@ class ServeApp:
         )
         try:
             self.processor = self.registry.create_processor(self.manifest)
-            contract = runtime_contract_payload(
-                self.backend,
+            self.session = BackendSession(
+                manifest=self.manifest,
+                profiles=self.profiles,
+                backend=self.backend,
                 processor=self.processor,
+                trace=self.trace,
             )
-            if contract is not None:
-                self._trace("runtime_contract", **contract)
-            report = preflight_report(self.backend)
-            if report is not None:
-                self._trace("preflight", **report.to_trace_payload())
-            assert_preflight(report)
-            load_start = time.perf_counter()
-            self._trace("backend_load_start")
-            self.backend.load()
-            self.trace.set_runtime_info(self.backend.runtime_info())
-            self._trace(
-                "backend_load",
-                timing={"total_ms": (time.perf_counter() - load_start) * 1000},
-                memory=memory_snapshot(),
-            )
-            warmup_start = time.perf_counter()
-            self.backend.warmup()
-            self._trace(
-                "backend_warmup",
-                timing={"total_ms": (time.perf_counter() - warmup_start) * 1000},
-                memory=memory_snapshot(),
-            )
-            self.backend.reset()
-            self._trace("reset")
+            self.session.start()
             self._trace("serve_ready", status="ok")
         except Exception as exc:
             self._trace(
@@ -136,7 +112,10 @@ class ServeApp:
             return
         self.closed = True
         try:
-            self.backend.close()
+            if self.session is not None:
+                self.session.close()
+            else:
+                self.backend.close()
         finally:
             if self.trace is not None:
                 self.trace.write("backend_close", trace_path=str(self.trace_path))
@@ -184,21 +163,18 @@ class ServeApp:
             )
             if request.reset:
                 self.backend.reset()
-            result = self.backend.infer(request)
-            self._trace(
-                "serve_request_end",
-                request_id=request_id,
-                status="ok",
-                action_horizon=request.action_horizon,
-                replan_steps=request.replan_steps,
-                synthetic_observation=synthetic_observation,
-                **inference_result_payload(
-                    self.manifest,
-                    result,
-                    expected_horizon=request.action_horizon,
-                    wall_ms=(time.perf_counter() - start) * 1000,
-                    validate_action_contract=action_contract_enabled(self.backend),
-                ),
+            result = self.session_or_raise.infer_and_trace(
+                request,
+                event="serve_request_end",
+                expected_horizon=request.action_horizon,
+                started_at=start,
+                payload={
+                    "request_id": request_id,
+                    "status": "ok",
+                    "action_horizon": request.action_horizon,
+                    "replan_steps": request.replan_steps,
+                    "synthetic_observation": synthetic_observation,
+                },
             )
             return result.to_dict()
         except Exception as exc:
@@ -226,6 +202,12 @@ class ServeApp:
     def _trace(self, event: str, **payload: Any) -> None:
         if self.trace is not None:
             self.trace.write(event, **payload)
+
+    @property
+    def session_or_raise(self) -> BackendSession:
+        if self.session is None:
+            raise RuntimeError("serve backend session is not started")
+        return self.session
 
 
 def make_handler(app: ServeApp) -> type[BaseHTTPRequestHandler]:

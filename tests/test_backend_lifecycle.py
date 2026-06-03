@@ -218,14 +218,11 @@ def test_native_smoke_traces_backend_load_failure(tmp_path) -> None:
     ]
     assert [event["event"] for event in events] == [
         "run_start",
-        "runtime_contract",
         "processor_smoke_observation",
         "backend_load_start",
         "error",
         "run_end",
     ]
-    assert events[1]["backend"] == "fastwam"
-    assert events[1]["mode"] == "native_smoke"
     assert events[-2]["stage"] == "backend_load"
     assert events[-1]["status"] == "error"
     assert created[0].closed is True

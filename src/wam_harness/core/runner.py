@@ -6,17 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from wam_harness.core.action_contract import ActionContractError
-from wam_harness.core.backend_capabilities import (
-    action_contract_enabled,
-    preflight_report,
-    runtime_contract_payload,
-)
+from wam_harness.core.backend_session import BackendSession
 from wam_harness.core.inference_trace import (
-    inference_result_payload,
     observation_summary,
 )
-from wam_harness.core.memory import memory_snapshot
-from wam_harness.core.preflight import PreflightError, assert_preflight
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.runtime import INPUT_RUN_SPEC, RUN_SPEC
 from wam_harness.core.tracing import TraceWriter
@@ -114,8 +108,14 @@ class Runner:
         last_result: InferenceResult | None = None
         runtime_info = backend.runtime_info()
 
-        try:
-            with TraceWriter(trace_path, run_id, runtime_info) as trace:
+        with TraceWriter(trace_path, run_id, runtime_info) as trace:
+            with BackendSession(
+                manifest=manifest,
+                profiles=profiles,
+                backend=backend,
+                processor=processor,
+                trace=trace,
+            ) as session:
                 trace.write(
                     "run_start",
                     mode=str(manifest.backend.get("mode", "run")),
@@ -127,37 +127,13 @@ class Runner:
                     synthetic_observation=manifest.workload_name == "processor_smoke",
                 )
                 try:
-                    contract = runtime_contract_payload(
-                        backend,
-                        processor=processor,
-                    )
-                    if contract is not None:
-                        trace.write("runtime_contract", **contract)
-                    report = preflight_report(backend)
-                    if report is not None:
-                        trace.write("preflight", **report.to_trace_payload())
-                    assert_preflight(report)
-                    load_start = time.perf_counter()
-                    trace.write("backend_load_start")
-                    backend.load()
-                    runtime_info = backend.runtime_info()
-                    trace.set_runtime_info(runtime_info)
-                    trace.write(
-                        "backend_load",
-                        timing={"total_ms": (time.perf_counter() - load_start) * 1000},
-                        memory=memory_snapshot(),
-                    )
-                    start = time.perf_counter()
-                    backend.warmup()
-                    trace.write(
-                        "backend_warmup",
-                        timing={"total_ms": (time.perf_counter() - start) * 1000},
-                        memory=memory_snapshot(),
-                    )
-
+                    session.emit_runtime_contract()
+                    session.emit_preflight()
+                    session.load_backend()
+                    session.warmup_backend()
+                    runtime_info = session.runtime_info
                     workload.reset()
-                    backend.reset()
-                    trace.write("reset")
+                    session.reset_backend()
                     trace.write("episode_start", episode_id=workload.episode_id)
 
                     while not workload.done:
@@ -187,29 +163,22 @@ class Runner:
                                 step_id=workload.step_id,
                                 replan_id=replan_id,
                             )
-                            infer_start = time.perf_counter()
-                            result = backend.infer(request)
-                            last_result = result
-                            infer_wall_ms = (time.perf_counter() - infer_start) * 1000
-                            result_payload = inference_result_payload(
-                                manifest,
-                                result,
+                            result = session.infer_and_trace(
+                                request,
+                                event="inference_end",
                                 expected_horizon=effective_action_horizon,
-                                wall_ms=infer_wall_ms,
-                                validate_action_contract=action_contract_enabled(backend),
+                                payload={
+                                    "episode_id": workload.episode_id,
+                                    "step_id": workload.step_id,
+                                    "replan_id": replan_id,
+                                    "action_horizon": effective_action_horizon,
+                                    "replan_steps": effective_replan_steps,
+                                },
                             )
+                            last_result = result
                             pending_actions = list(result.action_chunk.actions)
                             workload.mark_replan()
                             model_calls += 1
-                            trace.write(
-                                "inference_end",
-                                episode_id=workload.episode_id,
-                                step_id=workload.step_id,
-                                replan_id=replan_id,
-                                action_horizon=effective_action_horizon,
-                                replan_steps=effective_replan_steps,
-                                **result_payload,
-                            )
 
                         action = pending_actions.pop(0) if pending_actions else []
                         from_stale_chunk = bool(pending_actions)
@@ -260,8 +229,6 @@ class Runner:
                         trace_path=str(trace_path),
                     )
                     raise
-        finally:
-            backend.close()
 
         return RunSummary(
             run_id=run_id,

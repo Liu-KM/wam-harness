@@ -1,27 +1,17 @@
 from __future__ import annotations
 
-import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from wam_harness.core.action_contract import (
-    ActionContractError,
-    validate_action_contract,
-)
-from wam_harness.core.action_summary import action_chunk_summary
-from wam_harness.core.memory import memory_snapshot
-from wam_harness.backends.native_support.contract import native_runtime_contract_payload
-from wam_harness.backends.native_support.readiness import (
-    NativePreflightError,
-    assert_native_preflight,
-    native_readiness_payload,
-)
 from wam_harness.backends.native_support.runtime import (
     NATIVE_SMOKE_SPEC,
     NativeRuntimeError,
     resolve_native_runtime,
 )
+from wam_harness.core.action_contract import ActionContractError
+from wam_harness.core.backend_session import BackendSession
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.tracing import TraceWriter
 from wam_harness.core.types import InferenceRequest, Manifest, Observation, RuntimeInfo
@@ -95,8 +85,14 @@ class NativeSmokeRunner:
         warnings: list[str] = []
         action_shape: list[int] = []
 
-        try:
-            with TraceWriter(trace_path, run_id, runtime_info) as trace:
+        with TraceWriter(trace_path, run_id, runtime_info) as trace:
+            with BackendSession(
+                manifest=manifest,
+                profiles=profiles,
+                backend=backend,
+                processor=processor,
+                trace=trace,
+            ) as session:
                 trace.write(
                     "run_start",
                     mode="native_smoke",
@@ -108,18 +104,8 @@ class NativeSmokeRunner:
                 )
                 stage = "preflight"
                 try:
-                    contract = native_runtime_contract_payload(
-                        manifest,
-                        profiles,
-                        processor=processor,
-                        backend=backend,
-                    )
-                    if contract is not None:
-                        trace.write("runtime_contract", **contract)
-                    readiness = native_readiness_payload(backend)
-                    if readiness is not None:
-                        trace.write("preflight", **readiness)
-                    assert_native_preflight(readiness, require_ready=require_ready)
+                    session.emit_runtime_contract()
+                    session.emit_preflight(require_ready=require_ready)
                     stage = "processor_smoke_observation"
                     observation = processor.smoke_observation()
                     trace.write(
@@ -127,28 +113,12 @@ class NativeSmokeRunner:
                         observation_summary=_observation_summary(observation),
                     )
                     stage = "backend_load"
-                    load_start = time.perf_counter()
-                    trace.write("backend_load_start")
-                    backend.load()
-                    runtime_info = backend.runtime_info()
-                    trace.set_runtime_info(runtime_info)
-                    trace.write("backend_load", memory=memory_snapshot())
-                    trace.write(
-                        "backend_load_end",
-                        timing={"total_ms": (time.perf_counter() - load_start) * 1000},
-                        memory=memory_snapshot(),
-                    )
+                    session.load_backend(split_end_event=True)
+                    runtime_info = session.runtime_info
                     stage = "backend_warmup"
-                    warmup_start = time.perf_counter()
-                    backend.warmup()
-                    trace.write(
-                        "backend_warmup",
-                        timing={"total_ms": (time.perf_counter() - warmup_start) * 1000},
-                        memory=memory_snapshot(),
-                    )
+                    session.warmup_backend()
                     stage = "backend_reset"
-                    backend.reset()
-                    trace.write("reset")
+                    session.reset_backend()
 
                     stage = "inference"
                     request = InferenceRequest(
@@ -164,34 +134,17 @@ class NativeSmokeRunner:
                         replan_steps=effective_replan_steps,
                         observation_summary=_observation_summary(observation),
                     )
-                    infer_start = time.perf_counter()
-                    result = backend.infer(request)
-                    infer_wall_ms = (time.perf_counter() - infer_start) * 1000
+                    result = session.infer_and_trace(
+                        request,
+                        event="inference_end",
+                        expected_horizon=effective_action_horizon,
+                        validate_action_contract=True,
+                    )
                     action_shape = [
                         result.action_chunk.horizon,
                         result.action_chunk.action_dim,
                     ]
-                    stage = "action_contract"
-                    action_contract = validate_action_contract(
-                        manifest,
-                        result.action_chunk,
-                        expected_horizon=effective_action_horizon,
-                    )
                     warnings.extend(result.warnings)
-                    trace.write(
-                        "inference_end",
-                        action_chunk_len=result.action_chunk.horizon,
-                        action_dim=result.action_chunk.action_dim,
-                        action_chunk_shape=action_shape,
-                        action_summary=action_chunk_summary(result.action_chunk),
-                        future_frames=result.future_frames,
-                        value=result.value,
-                        timing={**result.timing, "wall_ms": infer_wall_ms},
-                        memory={**memory_snapshot(), **result.memory},
-                        backend_metadata=result.backend_metadata,
-                        action_contract=action_contract.to_dict(),
-                        warnings=result.warnings,
-                    )
                     trace.write(
                         "run_end",
                         status="ok",
@@ -205,13 +158,13 @@ class NativeSmokeRunner:
                     trace.write(
                         "error",
                         stage="preflight"
-                        if isinstance(exc, NativePreflightError)
+                        if isinstance(exc, PreflightError)
                         else "action_contract"
                         if isinstance(exc, ActionContractError)
                         else stage,
                         error_type=type(exc).__name__,
                         message=str(exc),
-                        recoverable=isinstance(exc, NativePreflightError),
+                        recoverable=isinstance(exc, PreflightError),
                         backend=manifest.backend_name,
                         trace_path=str(trace_path),
                     )
@@ -224,8 +177,6 @@ class NativeSmokeRunner:
                         trace_path=str(trace_path),
                     )
                     raise
-        finally:
-            backend.close()
 
         return NativeSmokeSummary(
             run_id=run_id,
