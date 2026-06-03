@@ -172,6 +172,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override native backend config for this serve run",
     )
     serve_parser.add_argument("--smoke", action="store_true", help="Run a job-local serve smoke check")
+    serve_parser.add_argument(
+        "--smoke-input",
+        default=None,
+        help="Observation JSON file to POST during --smoke",
+    )
 
     compare_parser = subparsers.add_parser("compare", help="Compare two recorded traces")
     compare_parser.add_argument("baseline")
@@ -333,6 +338,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_cli_error(exc)
             return 2
         if args.smoke:
+            smoke_payload = None
+            if args.smoke_input is not None:
+                try:
+                    smoke_payload = load_json_payload(args.smoke_input)
+                    if observation_from_payload(smoke_payload) is None:
+                        raise ValueError("smoke input JSON must contain observation.images")
+                except (OSError, ValueError, TypeError) as exc:
+                    _print_cli_error(exc)
+                    return 1
             try:
                 result = smoke_serve(
                     model_id=args.model_id,
@@ -341,6 +355,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     upstream_dir=args.upstream_dir,
                     cache_dir=args.cache_dir,
                     backend_overrides=backend_overrides,
+                    payload=smoke_payload,
                 )
             except _CLI_KNOWN_ERRORS as exc:
                 _print_cli_error(exc)

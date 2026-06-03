@@ -1,0 +1,32 @@
+{
+  "observation": {
+    "images": {
+      "primary": [
+        [[32, 64, 96], [48, 80, 112]],
+        [[64, 96, 128], [80, 112, 144]]
+      ],
+      "wrist": [
+        [[96, 64, 32], [112, 80, 48]],
+        [[128, 96, 64], [144, 112, 80]]
+      ]
+    },
+    "metadata": {
+      "task": "open the drawer"
+    },
+    "prompt": "open the drawer",
+    "session": {
+      "episode_id": 0,
+      "session_id": "fastwam-libero-example"
+    },
+    "state": {
+      "robot0_eef_pos": [0.0, 0.0, 0.0],
+      "robot0_eef_quat": [0.0, 0.0, 0.0, 1.0],
+      "robot0_gripper_qpos": [0.0, 0.0]
+    }
+  },
+  "action_horizon": 32,
+  "replan_steps": 10,
+  "runtime_options": {
+    "num_inference_steps": 10
+  }
+}

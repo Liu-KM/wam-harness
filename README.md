@@ -58,6 +58,7 @@ wam doctor [model-id]
 wam prepare <model-id>
 wam run <model-id> --input obs.json --output action.json
 wam serve <model-id>
+wam serve <model-id> --smoke --smoke-input obs.json
 ```
 
 `prepare` is the public command for making a WAM model entry ready to use. It
@@ -88,6 +89,23 @@ For real WAMs, `wam run` requires an explicit observation input. WAM inference
 needs images, robot state, prompt, and optional session/history; the CLI does
 not silently invent those inputs. Use `wam native-smoke <model-id>` for
 maintainer synthetic-observation smoke tests.
+
+FastWAM's first product-path input example lives at
+`examples/fastwam_libero/obs.json`:
+
+```bash
+wam run fastwam-libero \
+  --input examples/fastwam_libero/obs.json \
+  --output /tmp/fastwam-action.json \
+  --upstream-dir /path/to/FastWAM \
+  --cache-dir /path/to/wam-cache
+
+wam serve fastwam-libero \
+  --smoke \
+  --smoke-input examples/fastwam_libero/obs.json \
+  --upstream-dir /path/to/FastWAM \
+  --cache-dir /path/to/wam-cache
+```
 
 ## Optimization Profiles
 

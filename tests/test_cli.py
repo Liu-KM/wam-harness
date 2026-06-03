@@ -1,6 +1,17 @@
 import json
+from contextlib import nullcontext
 
+from wam_harness.backends.fastwam import FastWAMBackend, FastWAMModelAdapter
+from wam_harness.backends.native_support.runtime import native_runtime_resolver
 from wam_harness.cli import build_parser, main
+from wam_harness.core.registry import Registry
+from wam_harness.core.types import (
+    ActionChunk,
+    InferenceResult,
+    Manifest,
+    Observation,
+    OptimizationProfile,
+)
 
 
 def write_fastwam_required_paths(repo) -> None:
@@ -352,6 +363,8 @@ def test_cli_serve_accepts_native_backend_overrides() -> None:
             "--backend-set",
             "task=libero",
             "--smoke",
+            "--smoke-input",
+            "/tmp/obs.json",
         ]
     )
 
@@ -360,6 +373,7 @@ def test_cli_serve_accepts_native_backend_overrides() -> None:
     assert args.upstream_dir == "/repo/FastWAM"
     assert args.backend_set == ["task=libero"]
     assert args.smoke is True
+    assert args.smoke_input == "/tmp/obs.json"
 
 
 def test_cli_rejects_malformed_overrides_without_traceback(capsys) -> None:
@@ -400,3 +414,280 @@ def test_cli_serve_smoke(tmp_path, capsys) -> None:
     assert payload["health"]["runtime_info"]["manifest_id"] == "fake-open-loop"
     assert payload["health"]["trace_path"].endswith("trace.jsonl")
     assert payload["inference"]["action_chunk"]["shape"] == [3, 4]
+
+
+def test_cli_serve_smoke_posts_input_observation(tmp_path, capsys) -> None:
+    input_path = tmp_path / "obs.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "observation": {
+                    "images": {"primary": [[[1, 2, 3]]]},
+                    "prompt": "serve this observation",
+                    "session": {"episode_id": 2, "step_id": 3},
+                },
+                "action_horizon": 2,
+                "replan_steps": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "serve",
+            "fake-open-loop",
+            "--trace-dir",
+            str(tmp_path / "runs"),
+            "--smoke",
+            "--smoke-input",
+            str(input_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["inference"]["action_chunk"]["shape"] == [2, 4]
+    assert payload["inference"]["action_chunk"]["actions"][0] == [2.3, 2.301, 2.302, 2.303]
+
+
+def test_cli_serve_smoke_input_requires_observation(tmp_path, capsys) -> None:
+    input_path = tmp_path / "bad.json"
+    input_path.write_text(json.dumps({"action_horizon": 2}), encoding="utf-8")
+
+    exit_code = main(
+        [
+            "serve",
+            "fake-open-loop",
+            "--smoke",
+            "--smoke-input",
+            str(input_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "error: smoke input JSON must contain observation.images" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_run_fastwam_native_product_path_writes_action_output(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    registry, _created = _fastwam_product_registry(tmp_path)
+    _patch_default_registry(monkeypatch, registry)
+    input_path = _write_fastwam_input(tmp_path)
+    output_path = tmp_path / "action.json"
+
+    exit_code = main(
+        [
+            "run",
+            "fastwam-libero",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_path),
+            "--upstream-dir",
+            str(tmp_path / "FastWAM"),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--trace-dir",
+            str(tmp_path / "runs"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    printed = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload == printed
+    assert payload["runtime_info"]["backend"] == "fastwam"
+    assert payload["runtime_info"]["mode"] == "run"
+    assert payload["result"]["action_chunk"]["shape"] == [32, 7]
+    assert payload["result"]["backend_metadata"]["model_adapter"] == "fastwam_model"
+    assert payload["result"]["backend_metadata"]["fastwam_call"] == "infer_action"
+
+    trace_path = tmp_path / payload["trace_path"]
+    events = _read_events(trace_path)
+    names = [event["event"] for event in events]
+    assert "runtime_contract" in names
+    assert "preflight" in names
+    assert "backend_load" in names
+    inference_end = [event for event in events if event["event"] == "inference_end"][0]
+    assert inference_end["action_chunk_shape"] == [32, 7]
+    assert inference_end["action_contract"]["status"] == "ok"
+
+
+def test_cli_serve_fastwam_native_smoke_input_returns_action(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    registry, _created = _fastwam_product_registry(tmp_path)
+    _patch_default_registry(monkeypatch, registry)
+    input_path = _write_fastwam_input(tmp_path)
+
+    exit_code = main(
+        [
+            "serve",
+            "fastwam-libero",
+            "--smoke",
+            "--smoke-input",
+            str(input_path),
+            "--upstream-dir",
+            str(tmp_path / "FastWAM"),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--trace-dir",
+            str(tmp_path / "serve-runs"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["status"] == "ok"
+    assert payload["health"]["runtime_info"]["backend"] == "fastwam"
+    assert payload["health"]["runtime_info"]["mode"] == "serve"
+    assert payload["inference"]["action_chunk"]["shape"] == [32, 7]
+    assert payload["inference"]["backend_metadata"]["model_adapter"] == "fastwam_model"
+
+
+def _fastwam_product_registry(tmp_path):
+    registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
+    created: list[_LightFastWAMBackend] = []
+    repo = tmp_path / "FastWAM"
+    cache = tmp_path / "cache"
+    write_fastwam_required_paths(repo)
+    checkpoint = cache / "checkpoints" / "fastwam_release" / "libero_uncond_2cam224.pt"
+    dataset_stats = (
+        cache
+        / "checkpoints"
+        / "fastwam_release"
+        / "libero_uncond_2cam224_dataset_stats.json"
+    )
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_bytes(b"checkpoint")
+    dataset_stats.write_text("{}", encoding="utf-8")
+
+    def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> _LightFastWAMBackend:
+        backend = _LightFastWAMBackend(manifest, profiles)
+        created.append(backend)
+        return backend
+
+    registry.register_backend("fastwam", factory)
+    registry.register_processor("fastwam_libero", lambda manifest: _FastWAMContractProcessor())
+    return registry, created
+
+
+def _patch_default_registry(monkeypatch, registry: Registry) -> None:
+    import wam_harness.defaults as defaults
+
+    monkeypatch.setattr(defaults, "default_registry", lambda: registry)
+
+
+def _write_fastwam_input(tmp_path):
+    input_path = tmp_path / "obs.json"
+    input_path.write_text(
+        json.dumps(
+            {
+                "observation": {
+                    "images": {
+                        "primary": [[[1, 2, 3]]],
+                        "wrist": [[[4, 5, 6]]],
+                    },
+                    "prompt": "open the drawer",
+                    "state": {
+                        "robot0_eef_pos": [0.0, 0.0, 0.0],
+                        "robot0_eef_quat": [0.0, 0.0, 0.0, 1.0],
+                        "robot0_gripper_qpos": [0.0, 0.0],
+                    },
+                    "session": {"episode_id": 0, "step_id": 0},
+                },
+                "action_horizon": 32,
+                "replan_steps": 10,
+            }
+        ),
+        encoding="utf-8",
+    )
+    return input_path
+
+
+def _read_events(path):
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class _LightFastWAMBackend(FastWAMBackend):
+    required_python_modules = ()
+    runtime_asset_names = ("checkpoint", "dataset_stats")
+
+    def load(self) -> None:
+        repo = self.resolve_upstream_repo()
+        self.checkpoint_path = self.resolve_required_asset("checkpoint")
+        self.dataset_stats_path = self.resolve_required_asset("dataset_stats")
+        self.processor = _FastWAMProductProcessor()
+        self.model = _FastWAMActionModel()
+        self.cfg = {"EVALUATION": {"num_inference_steps": 1}}
+        self.model_adapter = FastWAMModelAdapter(
+            model=self.model,
+            cfg=self.cfg,
+            checkpoint_path=self.checkpoint_path,
+            dataset_stats_path=self.dataset_stats_path,
+            config=dict(self.config),
+            no_grad_factory=lambda: nullcontext(),
+            error_cls=self.error_cls,
+        )
+        self.device = "cpu"
+        self.upstream_repo = repo
+        self.loaded = True
+
+
+class _FastWAMActionModel:
+    def infer_action(self, *, action_horizon, **kwargs):
+        return {
+            "action": [
+                [float(col) for col in range(7)]
+                for _ in range(int(action_horizon))
+            ]
+        }
+
+
+class _FastWAMProductProcessor:
+    def to_model_inputs(self, observation: Observation):
+        return {
+            "prompt": f"prompt: {observation.prompt}",
+            "input_image": "image",
+            "proprio": "proprio",
+        }
+
+    def to_harness_result(self, raw_output):
+        return InferenceResult(
+            action_chunk=ActionChunk(actions=raw_output["action"]),
+            backend_metadata={"raw_keys": sorted(raw_output)},
+        )
+
+
+class _FastWAMContractProcessor(_FastWAMProductProcessor):
+    def modality_limits(self):
+        return {
+            "processor": "fastwam_libero",
+            "images": ["primary", "wrist"],
+            "state": "proprio",
+            "prompt": "task_suite",
+            "action_dim": 7,
+        }
+
+    def smoke_observation(self):
+        return Observation(
+            images={"primary": [[[1, 2, 3]]], "wrist": [[[4, 5, 6]]]},
+            prompt="open the drawer",
+        )

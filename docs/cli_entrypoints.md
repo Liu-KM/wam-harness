@@ -14,6 +14,7 @@ wam prepare fastwam-libero --cache-dir /mnt/wam-cache
 wam run fastwam-libero --input obs.json --output action.json --cache-dir /mnt/wam-cache --trace-dir runs
 wam eval fastwam-libero --workload libero-single-task --task-id 0 --num-trials 1 --cache-dir /mnt/wam-cache
 wam serve fastwam-libero --cache-dir /mnt/wam-cache --trace-dir runs
+wam serve fastwam-libero --smoke --smoke-input obs.json --cache-dir /mnt/wam-cache
 ```
 
 These are the public words. Internal implementation may still use terms such as
@@ -123,6 +124,18 @@ internal health-check mode that uses the registered processor's
 `backend.config.native_backend`, `wam serve` maps the model entry to
 `mode: serve`; it does not try to run an official simulator script as a
 server.
+
+For a one-command job-local server check with a real observation payload, pass
+`--smoke-input`. This starts the same local server, posts the JSON file to
+`/infer`, prints health plus inference output, then exits:
+
+```bash
+wam serve fastwam-libero \
+  --smoke \
+  --smoke-input examples/fastwam_libero/obs.json \
+  --cache-dir /mnt/wam-cache \
+  --upstream-dir /mnt/upstreams/FastWAM
+```
 
 When the backend container or job mounts upstream source outside the model
 entry's default path, pass it explicitly:
