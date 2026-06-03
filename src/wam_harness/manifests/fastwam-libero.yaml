@@ -1,0 +1,192 @@
+schema_version: 1
+id: fastwam-libero
+display_name: FastWAM LIBERO
+
+source:
+  repo: yuantianyuan01/FastWAM
+  reference: "Fast-WAM: Do World Action Models Need Test-time Future Imagination?"
+  license: unknown
+
+assets:
+  checkpoint:
+    uri: hf://yuanty/fastwam/libero_uncond_2cam224.pt
+    local_path: checkpoints/fastwam_release/libero_uncond_2cam224.pt
+    size_bytes: 12041735140
+  dataset_stats:
+    uri: hf://yuanty/fastwam/libero_uncond_2cam224_dataset_stats.json
+    local_path: checkpoints/fastwam_release/libero_uncond_2cam224_dataset_stats.json
+    size_bytes: 40939
+  model_base:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B
+  tokenizer_components:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B
+
+backend:
+  name: external_eval
+  mode: official_script
+  config:
+    upstream: FastWAM
+    simulator: LIBERO
+    native_backend: fastwam
+
+processor:
+  name: fastwam_libero
+  observation:
+    image_views: [primary, wrist]
+    state: proprio
+    prompt: task_suite
+  action:
+    horizon: 32
+    dim: 7
+    control_hz: null
+
+workload:
+  name: external_eval
+  config:
+    simulator: LIBERO
+    suite: libero_10
+    default_eval_workload: libero-manager
+    eval_workloads:
+      - libero-manager
+      - libero-single-task
+
+defaults:
+  device: cuda
+  dtype: bf16
+  action_horizon: 32
+  replan_steps: 10
+  return_future: false
+  return_value: false
+
+optimizations:
+  supported:
+    - action_chunk_scheduling
+  profiles:
+    action_chunk_scheduling:
+      enabled: true
+      scope: simulator_eval
+      params: {}
+  measured: []
+  unsupported:
+    vla_cache: Requires the OpenVLA model family.
+    dit_cache: Not exposed by the FastWAM LIBERO reference evaluators.
+
+deployment:
+  reference_path: official_script
+  product_path: native_backend_migration
+  native_backend: fastwam
+  native_stage: native_smoke_verified
+  native_verified: true
+  simulator_eval: single_task_verified
+  parity_verified: false
+  next_gate: full_libero_eval
+  notes:
+    - Native backend loads the released checkpoint and passes synthetic-observation smoke.
+    - LIBERO single-task simulator eval passes through wam eval.
+    - Full LIBERO manager eval and native-vs-reference parity have not passed yet.
+
+eval:
+  simulator: LIBERO
+  suite: libero_10
+  default_workload: libero-manager
+  upstream:
+    repo: yuantianyuan01/FastWAM
+    commit: 45d8e14
+    local_env: WAM_FASTWAM_REPO
+    default_dir: /workspace/FastWAM
+  defaults:
+    task: libero_uncond_2cam224_1e-4
+    checkpoint_path: "{cache_dir}/checkpoints/fastwam_release/libero_uncond_2cam224.pt"
+    dataset_stats_path: "{cache_dir}/checkpoints/fastwam_release/libero_uncond_2cam224_dataset_stats.json"
+    num_gpus: "1"
+    num_trials: "1"
+    max_tasks_per_gpu: "1"
+    create_only: "False"
+    task_file: "null"
+    diffsynth_download_source: huggingface
+    diffsynth_model_base_path: "{cache_dir}/diffsynth-models"
+    redirect_common_files: "False"
+    libero_config_path: "{cache_dir}/libero/config"
+    libero_pythonpath: "{cache_dir}/upstreams/LIBERO"
+    mujoco_gl: osmesa
+    pyopengl_platform: osmesa
+  workloads:
+    libero-manager:
+      description: Full LIBERO manager evaluation path.
+      defaults:
+        num_gpus: "1"
+        max_tasks_per_gpu: "1"
+        create_only: "False"
+        task_file: "null"
+      command:
+        workdir: "{upstream_dir}"
+        env:
+          DIFFSYNTH_DOWNLOAD_SOURCE: "{diffsynth_download_source}"
+          DIFFSYNTH_MODEL_BASE_PATH: "{diffsynth_model_base_path}"
+          HF_HOME: "{cache_dir}/huggingface"
+          HF_HUB_CACHE: "{cache_dir}/huggingface/hub"
+          LIBERO_CONFIG_PATH: "{libero_config_path}"
+          MUJOCO_GL: "{mujoco_gl}"
+          PYOPENGL_PLATFORM: "{pyopengl_platform}"
+          PYTHONPATH: "{libero_pythonpath}"
+          TOKENIZERS_PARALLELISM: "false"
+          TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+          WANDB_MODE: offline
+        argv:
+          - python
+          - experiments/libero/run_libero_manager.py
+          - task={task}
+          - ckpt={checkpoint_path}
+          - EVALUATION.dataset_stats_path={dataset_stats_path}
+          - EVALUATION.output_dir={output_dir}/fastwam_libero
+          - EVALUATION.num_trials={num_trials}
+          - MULTIRUN.num_gpus={num_gpus}
+          - MULTIRUN.max_tasks_per_gpu={max_tasks_per_gpu}
+          - MULTIRUN.task_suite_names=[libero_10]
+          - MULTIRUN.task_file={task_file}
+          - MULTIRUN.create_only={create_only}
+          - model.redirect_common_files={redirect_common_files}
+    libero-single-task:
+      description: One official LIBERO task evaluator used as a fast smoke path.
+      defaults:
+        task_suite_name: libero_10
+        task_id: "0"
+        gpu_id: "0"
+        num_inference_steps: "10"
+        visualize_future_video: "False"
+      command:
+        workdir: "{upstream_dir}"
+        env:
+          DIFFSYNTH_DOWNLOAD_SOURCE: "{diffsynth_download_source}"
+          DIFFSYNTH_MODEL_BASE_PATH: "{diffsynth_model_base_path}"
+          HF_HOME: "{cache_dir}/huggingface"
+          HF_HUB_CACHE: "{cache_dir}/huggingface/hub"
+          LIBERO_CONFIG_PATH: "{libero_config_path}"
+          MUJOCO_GL: "{mujoco_gl}"
+          PYOPENGL_PLATFORM: "{pyopengl_platform}"
+          PYTHONPATH: "{libero_pythonpath}"
+          TOKENIZERS_PARALLELISM: "false"
+          TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+          WANDB_MODE: offline
+        argv:
+          - python
+          - experiments/libero/eval_libero_single.py
+          - task={task}
+          - ckpt={checkpoint_path}
+          - EVALUATION.dataset_stats_path={dataset_stats_path}
+          - EVALUATION.output_dir={output_dir}/fastwam_libero_single
+          - EVALUATION.num_trials={num_trials}
+          - EVALUATION.task_suite_name={task_suite_name}
+          - EVALUATION.task_id={task_id}
+          - EVALUATION.num_inference_steps={num_inference_steps}
+          - EVALUATION.visualize_future_video={visualize_future_video}
+          - model.redirect_common_files={redirect_common_files}
+          - gpu_id={gpu_id}
+
+known_gaps:
+  - Requires the official LIBERO environment and MuJoCo inside the FastWAM container.
+  - The verified reference deployment uses OSMesa software rendering because NVIDIA EGL may fail to create a robosuite display on some managed GPU nodes.
+  - Released FastWAM setup expects the Wan/ActionDiT model base outside this repo.
+  - This manifest exposes official manager and single-task eval workloads before simulator parity is complete.

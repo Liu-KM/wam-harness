@@ -1,0 +1,64 @@
+schema_version: 1
+id: fake-open-loop
+display_name: Fake Open Loop WAM
+
+source:
+  repo: wam-harness/fake
+  reference: Built-in deterministic fake backend for deployment spine testing.
+  license: TBD
+
+backend:
+  name: fake
+  mode: fake
+  config:
+    action_dim: 4
+
+processor:
+  name: passthrough
+  observation:
+    image_views: [primary]
+    state: proprio
+    prompt: required
+  action:
+    horizon: 3
+    dim: 4
+    control_hz: null
+
+workload:
+  name: open_loop
+  config:
+    episode_length: 6
+    prompt: move the fake end effector to the target
+    image_shapes:
+      primary: [64, 64, 3]
+    state_dims:
+      proprio: 7
+
+defaults:
+  device: cpu
+  dtype: fp32
+  action_horizon: 3
+  replan_steps: 2
+  return_future: false
+  return_value: false
+
+optimizations:
+  supported:
+    - fake_cache
+    - action_chunk_scheduling
+  profiles:
+    fake_cache:
+      enabled: false
+      scope: run
+      params:
+        cache_scope: replan
+    action_chunk_scheduling:
+      enabled: true
+      scope: replan
+      params: {}
+  measured: []
+  unsupported: {}
+
+known_gaps:
+  - Fake backend only; no real WAM weights are loaded.
+  - Outputs are deterministic shape/value smoke data, not robot actions.

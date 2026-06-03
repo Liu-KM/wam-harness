@@ -1,0 +1,217 @@
+schema_version: 1
+id: cosmos-policy-libero
+display_name: Cosmos-Policy LIBERO Official Evaluation
+
+source:
+  repo: NVlabs/cosmos-policy
+  reference: Cosmos-Policy LIBERO Predict2 2B checkpoint and evaluation script.
+  license: Apache-2.0
+
+assets:
+  checkpoint:
+    uri: hf://nvidia/Cosmos-Policy-LIBERO-Predict2-2B/Cosmos-Policy-LIBERO-Predict2-2B.pt
+    local_path: nvidia/Cosmos-Policy-LIBERO-Predict2-2B/Cosmos-Policy-LIBERO-Predict2-2B.pt
+  dataset_stats:
+    uri: hf://nvidia/Cosmos-Policy-LIBERO-Predict2-2B/libero_dataset_statistics.json
+    local_path: nvidia/Cosmos-Policy-LIBERO-Predict2-2B/libero_dataset_statistics.json
+  text_embeddings:
+    uri: hf://nvidia/Cosmos-Policy-LIBERO-Predict2-2B/libero_t5_embeddings.pkl
+    local_path: nvidia/Cosmos-Policy-LIBERO-Predict2-2B/libero_t5_embeddings.pkl
+  tokenizer:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth
+    local_path: Wan-AI/Wan2.1-T2V-1.3B/Wan2.1_VAE.pth
+
+backend:
+  name: external_eval
+  mode: official_script
+  config:
+    upstream: cosmos-policy
+    simulator: LIBERO
+    native_backend: cosmos_policy
+
+processor:
+  name: cosmos_policy_libero
+  observation:
+    image_views: [primary, wrist]
+    state: proprio
+    prompt: task_suite
+  action:
+    horizon: 16
+    dim: null
+    control_hz: null
+
+workload:
+  name: external_eval
+  config:
+    simulator: LIBERO
+    suite: libero_10
+    official_entrypoint: cosmos_policy.experiments.robot.libero.run_libero_eval
+
+defaults:
+  device: cuda
+  dtype: bf16
+  action_horizon: 16
+  replan_steps: 16
+  return_future: false
+  return_value: false
+
+optimizations:
+  supported:
+    - action_chunk_scheduling
+    - jpeg_observation_compression
+    - parallel_inference
+  profiles:
+    action_chunk_scheduling:
+      enabled: true
+      scope: simulator_eval
+      params: {}
+    jpeg_observation_compression:
+      enabled: true
+      scope: preprocessing
+      params: {}
+    parallel_inference:
+      enabled: false
+      scope: multi_gpu
+      params: {}
+  measured: []
+  unsupported:
+    vla_cache: Requires the OpenVLA model family.
+    dit_cache: DreamZero-specific DiT cache flag.
+
+deployment:
+  reference_path: official_script
+  product_path: native_backend_migration
+  native_backend: cosmos_policy
+  native_stage: native_smoke_verified
+  native_verified: true
+  parity_verified: false
+  next_gate: libero_eval
+  notes:
+    - Native backend maps to Cosmos get_model/get_action.
+    - Maintainer container native smoke has passed with real checkpoint assets and action shape [16, 7].
+
+eval:
+  simulator: LIBERO
+  suite: libero_10
+  upstream:
+    repo: NVlabs/cosmos-policy
+    commit: 18a2acc
+    local_env: WAM_COSMOS_POLICY_REPO
+    default_dir: /workspace/cosmos-policy
+  defaults:
+    checkpoint_path: "{cache_dir}/nvidia/Cosmos-Policy-LIBERO-Predict2-2B/Cosmos-Policy-LIBERO-Predict2-2B.pt"
+    dataset_stats_path: "{cache_dir}/nvidia/Cosmos-Policy-LIBERO-Predict2-2B/libero_dataset_statistics.json"
+    t5_text_embeddings_path: "{cache_dir}/nvidia/Cosmos-Policy-LIBERO-Predict2-2B/libero_t5_embeddings.pkl"
+    task_suite_name: libero_10
+    available_gpus: "0"
+    seed: "195"
+    chunk_size: "16"
+    num_open_loop_steps: "16"
+    num_trials_per_task: "1"
+    use_jpeg_compression: "True"
+    use_parallel_inference: "False"
+    num_queries_best_of_n: "1"
+    libero_config_path: "{cache_dir}/libero/config"
+    libero_pythonpath: "{cache_dir}/upstreams/LIBERO"
+    mujoco_gl: osmesa
+    pyopengl_platform: osmesa
+  optimization_context:
+    jpeg_observation_compression:
+      use_jpeg_compression: "True"
+    parallel_inference:
+      use_parallel_inference: "True"
+      num_queries_best_of_n: "4"
+  command:
+    workdir: "{upstream_dir}"
+    env:
+      HF_HOME: "{cache_dir}/huggingface"
+      HF_HUB_CACHE: "{cache_dir}/huggingface/hub"
+      LIBERO_CONFIG_PATH: "{libero_config_path}"
+      MUJOCO_GL: "{mujoco_gl}"
+      PYOPENGL_PLATFORM: "{pyopengl_platform}"
+      PYTHONPATH: "{libero_pythonpath}"
+      TOKENIZERS_PARALLELISM: "false"
+      TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+      WANDB_MODE: offline
+    argv:
+      - uv
+      - run
+      - --extra
+      - cu128
+      - --group
+      - libero
+      - --python
+      - "3.10"
+      - python
+      - -m
+      - cosmos_policy.experiments.robot.libero.run_libero_eval
+      - --config
+      - cosmos_predict2_2b_480p_libero__inference_only
+      - --ckpt_path
+      - "{checkpoint_path}"
+      - --config_file
+      - cosmos_policy/config/config.py
+      - --use_wrist_image
+      - "True"
+      - --use_proprio
+      - "True"
+      - --normalize_proprio
+      - "True"
+      - --unnormalize_actions
+      - "True"
+      - --dataset_stats_path
+      - "{dataset_stats_path}"
+      - --t5_text_embeddings_path
+      - "{t5_text_embeddings_path}"
+      - --trained_with_image_aug
+      - "True"
+      - --chunk_size
+      - "{chunk_size}"
+      - --num_open_loop_steps
+      - "{num_open_loop_steps}"
+      - --task_suite_name
+      - "{task_suite_name}"
+      - --num_trials_per_task
+      - "{num_trials_per_task}"
+      - --local_log_dir
+      - "{output_dir}/cosmos_policy_libero_logs"
+      - --randomize_seed
+      - "False"
+      - --data_collection
+      - "False"
+      - --available_gpus
+      - "{available_gpus}"
+      - --seed
+      - "{seed}"
+      - --use_variance_scale
+      - "False"
+      - --deterministic
+      - "True"
+      - --run_id_note
+      - wam-{run_id}
+      - --ar_future_prediction
+      - "False"
+      - --ar_value_prediction
+      - "False"
+      - --use_jpeg_compression
+      - "{use_jpeg_compression}"
+      - --flip_images
+      - "True"
+      - --num_denoising_steps_action
+      - "5"
+      - --num_denoising_steps_future_state
+      - "1"
+      - --num_denoising_steps_value
+      - "1"
+      - --use_parallel_inference
+      - "{use_parallel_inference}"
+      - --num_queries_best_of_n
+      - "{num_queries_best_of_n}"
+
+known_gaps:
+  - Requires the Cosmos-Policy Docker/uv environment with LIBERO dependencies.
+  - The verified reference deployment uses OSMesa software rendering because NVIDIA EGL may fail to create a robosuite display on some managed GPU nodes.
+  - The official checkpoint is large and should be cached on mounted scratch or persistent model storage.
+  - The reference setup patches an import-time Cosmos base-checkpoint lookup that otherwise requires access to a gated NVIDIA HF repo; the actual LIBERO policy checkpoint is still loaded from the public Cosmos-Policy-LIBERO repo.
+  - The reference setup redirects the Wan tokenizer to the public Wan2.1 VAE because the original Cosmos tokenizer paths are gated.
+  - This manifest currently wraps the official LIBERO evaluator, not a resident policy server.
