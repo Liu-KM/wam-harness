@@ -33,13 +33,12 @@ def event(run_id: str, name: str, **payload):
     return base
 
 
-def native_contract(run_id: str, **overrides):
+def runtime_contract(run_id: str, **overrides):
     payload = {
-        "native": True,
         "backend": "fastwam",
         "processor": "fastwam_libero",
         "workload": "processor_smoke",
-        "mode": "native_run",
+        "mode": "run",
         "runtime_mode": "in_process",
         "runtime_loader": "fastwam_runtime_loader",
         "model_adapter": "fastwam_model",
@@ -50,7 +49,7 @@ def native_contract(run_id: str, **overrides):
         "processor_modality": {"processor": "fastwam_libero"},
     }
     payload.update(overrides)
-    return event(run_id, "native_runtime_contract", **payload)
+    return event(run_id, "runtime_contract", **payload)
 
 
 def test_compare_traces_reports_faster_variant(tmp_path) -> None:
@@ -89,14 +88,14 @@ def test_compare_traces_reports_faster_variant(tmp_path) -> None:
     assert summary.relative_change < 0
 
 
-def test_compare_traces_allows_profile_change_under_same_native_contract(tmp_path) -> None:
+def test_compare_traces_allows_profile_change_under_same_runtime_contract(tmp_path) -> None:
     baseline = tmp_path / "baseline.jsonl"
     variant = tmp_path / "variant.jsonl"
     write_trace(
         baseline,
         [
             event("base", "run_start", optimization_profiles=[]),
-            native_contract("base"),
+            runtime_contract("base"),
             event("base", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 20.0}),
             event("base", "run_end", status="ok"),
         ],
@@ -109,7 +108,7 @@ def test_compare_traces_allows_profile_change_under_same_native_contract(tmp_pat
                 "run_start",
                 optimization_profiles=[{"name": "torch_compile", "enabled": True, "params": {}}],
             ),
-            native_contract(
+            runtime_contract(
                 "var",
                 optimization_profile_status=[
                     {
@@ -129,20 +128,20 @@ def test_compare_traces_allows_profile_change_under_same_native_contract(tmp_pat
     summary = compare_traces(baseline, variant)
 
     assert summary.decision == "faster"
-    assert summary.native_contract_gate == "native_contract_match"
-    assert summary.native_contract_gate_passed is True
-    assert summary.baseline.native_contract["backend"] == "fastwam"
+    assert summary.runtime_contract_gate == "runtime_contract_match"
+    assert summary.runtime_contract_gate_passed is True
+    assert summary.baseline.runtime_contract["backend"] == "fastwam"
     assert summary.variant.profiles == ["torch_compile"]
 
 
-def test_compare_traces_invalidates_native_contract_mismatch(tmp_path) -> None:
+def test_compare_traces_invalidates_runtime_contract_mismatch(tmp_path) -> None:
     baseline = tmp_path / "baseline.jsonl"
     variant = tmp_path / "variant.jsonl"
     write_trace(
         baseline,
         [
             event("base", "run_start", optimization_profiles=[]),
-            native_contract("base"),
+            runtime_contract("base"),
             event("base", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 20.0}),
             event("base", "run_end", status="ok"),
         ],
@@ -151,7 +150,7 @@ def test_compare_traces_invalidates_native_contract_mismatch(tmp_path) -> None:
         variant,
         [
             event("var", "run_start", optimization_profiles=[]),
-            native_contract("var", workload="serve"),
+            runtime_contract("var", workload="serve"),
             event("var", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 10.0}),
             event("var", "run_end", status="ok"),
         ],
@@ -160,12 +159,12 @@ def test_compare_traces_invalidates_native_contract_mismatch(tmp_path) -> None:
     summary = compare_traces(baseline, variant)
 
     assert summary.decision == "invalid"
-    assert summary.native_contract_gate_passed is False
-    assert summary.native_contract_gate_details["differences"]["workload"] == {
+    assert summary.runtime_contract_gate_passed is False
+    assert summary.runtime_contract_gate_details["differences"]["workload"] == {
         "baseline": "processor_smoke",
         "variant": "serve",
     }
-    assert "native runtime contract mismatch" in summary.warnings
+    assert "runtime contract mismatch" in summary.warnings
 
 
 def test_compare_traces_invalidates_model_adapter_mismatch(tmp_path) -> None:
@@ -175,7 +174,7 @@ def test_compare_traces_invalidates_model_adapter_mismatch(tmp_path) -> None:
         baseline,
         [
             event("base", "run_start", optimization_profiles=[]),
-            native_contract("base", model_adapter="fastwam_model"),
+            runtime_contract("base", model_adapter="fastwam_model"),
             event("base", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 20.0}),
             event("base", "run_end", status="ok"),
         ],
@@ -184,7 +183,7 @@ def test_compare_traces_invalidates_model_adapter_mismatch(tmp_path) -> None:
         variant,
         [
             event("var", "run_start", optimization_profiles=[]),
-            native_contract("var", model_adapter="cosmos_policy_model"),
+            runtime_contract("var", model_adapter="cosmos_policy_model"),
             event("var", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 10.0}),
             event("var", "run_end", status="ok"),
         ],
@@ -193,13 +192,13 @@ def test_compare_traces_invalidates_model_adapter_mismatch(tmp_path) -> None:
     summary = compare_traces(baseline, variant)
 
     assert summary.decision == "invalid"
-    assert summary.native_contract_gate == "native_contract_match"
-    assert summary.native_contract_gate_passed is False
-    assert summary.native_contract_gate_details["differences"]["model_adapter"] == {
+    assert summary.runtime_contract_gate == "runtime_contract_match"
+    assert summary.runtime_contract_gate_passed is False
+    assert summary.runtime_contract_gate_details["differences"]["model_adapter"] == {
         "baseline": "fastwam_model",
         "variant": "cosmos_policy_model",
     }
-    assert "native runtime contract mismatch" in summary.warnings
+    assert "runtime contract mismatch" in summary.warnings
 
 
 def test_compare_traces_invalidates_runtime_loader_mismatch(tmp_path) -> None:
@@ -209,7 +208,7 @@ def test_compare_traces_invalidates_runtime_loader_mismatch(tmp_path) -> None:
         baseline,
         [
             event("base", "run_start", optimization_profiles=[]),
-            native_contract("base", runtime_loader="fastwam_runtime_loader"),
+            runtime_contract("base", runtime_loader="fastwam_runtime_loader"),
             event("base", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 20.0}),
             event("base", "run_end", status="ok"),
         ],
@@ -218,7 +217,7 @@ def test_compare_traces_invalidates_runtime_loader_mismatch(tmp_path) -> None:
         variant,
         [
             event("var", "run_start", optimization_profiles=[]),
-            native_contract("var", runtime_loader="cosmos_policy_runtime_loader"),
+            runtime_contract("var", runtime_loader="cosmos_policy_runtime_loader"),
             event("var", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 10.0}),
             event("var", "run_end", status="ok"),
         ],
@@ -227,13 +226,13 @@ def test_compare_traces_invalidates_runtime_loader_mismatch(tmp_path) -> None:
     summary = compare_traces(baseline, variant)
 
     assert summary.decision == "invalid"
-    assert summary.native_contract_gate == "native_contract_match"
-    assert summary.native_contract_gate_passed is False
-    assert summary.native_contract_gate_details["differences"]["runtime_loader"] == {
+    assert summary.runtime_contract_gate == "runtime_contract_match"
+    assert summary.runtime_contract_gate_passed is False
+    assert summary.runtime_contract_gate_details["differences"]["runtime_loader"] == {
         "baseline": "fastwam_runtime_loader",
         "variant": "cosmos_policy_runtime_loader",
     }
-    assert "native runtime contract mismatch" in summary.warnings
+    assert "runtime contract mismatch" in summary.warnings
 
 
 def test_compare_traces_invalidates_runtime_mode_mismatch(tmp_path) -> None:
@@ -243,7 +242,7 @@ def test_compare_traces_invalidates_runtime_mode_mismatch(tmp_path) -> None:
         baseline,
         [
             event("base", "run_start", optimization_profiles=[]),
-            native_contract("base", runtime_mode="in_process"),
+            runtime_contract("base", runtime_mode="in_process"),
             event("base", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 20.0}),
             event("base", "run_end", status="ok"),
         ],
@@ -252,7 +251,7 @@ def test_compare_traces_invalidates_runtime_mode_mismatch(tmp_path) -> None:
         variant,
         [
             event("var", "run_start", optimization_profiles=[]),
-            native_contract("var", runtime_mode="resident_server"),
+            runtime_contract("var", runtime_mode="resident_server"),
             event("var", "inference_end", action_chunk_shape=[2, 7], timing={"wall_ms": 10.0}),
             event("var", "run_end", status="ok"),
         ],
@@ -261,13 +260,13 @@ def test_compare_traces_invalidates_runtime_mode_mismatch(tmp_path) -> None:
     summary = compare_traces(baseline, variant)
 
     assert summary.decision == "invalid"
-    assert summary.native_contract_gate == "native_contract_match"
-    assert summary.native_contract_gate_passed is False
-    assert summary.native_contract_gate_details["differences"]["runtime_mode"] == {
+    assert summary.runtime_contract_gate == "runtime_contract_match"
+    assert summary.runtime_contract_gate_passed is False
+    assert summary.runtime_contract_gate_details["differences"]["runtime_mode"] == {
         "baseline": "in_process",
         "variant": "resident_server",
     }
-    assert "native runtime contract mismatch" in summary.warnings
+    assert "runtime contract mismatch" in summary.warnings
 
 
 def test_compare_traces_marks_shape_mismatch_invalid(tmp_path) -> None:
@@ -585,4 +584,4 @@ def test_cli_compare_outputs_json(tmp_path, capsys) -> None:
     assert payload["decision"] == "same"
     assert payload["primary_metric"] == "latency_ms.mean"
     assert "output_gate_details" in payload
-    assert "native_contract_gate" in payload
+    assert "runtime_contract_gate" in payload

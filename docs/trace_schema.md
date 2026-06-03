@@ -25,7 +25,7 @@ The schema is operational: it explains what happened during a run and gives
 - `memory_sample`
 - `external_eval_plan`
 - `external_eval_end`
-- `native_readiness`
+- `preflight`
 - `serve_start`
 - `serve_ready`
 - `serve_request_start`
@@ -59,7 +59,7 @@ Every event should include:
 - `processor`
 - `model_name`
 - `source_repo`
-- `mode`: `local`, `remote`, `fake`, `native_run`, `native_smoke`, or `native_serve`
+- `mode`: `local`, `remote`, `fake`, `run`, `native_smoke`, or `serve`
 
 Workload events may also include:
 
@@ -90,11 +90,11 @@ Workload events may also include:
 For `external_eval` workloads, `model_calls` and `steps` may be omitted because
 the official upstream evaluator owns the simulator loop.
 
-`wam run` opens the trace before backend load. If native readiness is already
-`blocked`, the trace should contain `run_start`, `native_readiness`, an `error`
-with `stage="native_preflight"`, and `run_end.status="error"`; it should not
+`wam run` opens the trace before backend load. If backend preflight is already
+`blocked`, the trace should contain `run_start`, `preflight`, an `error`
+with `stage="preflight"`, and `run_end.status="error"`; it should not
 emit `backend_load_start` because model loading was intentionally skipped. If
-readiness is not blocked and `backend.load()` still fails because imports,
+preflight is not blocked and `backend.load()` still fails because imports,
 checkpoints, or runtime assets are missing, the trace should contain
 `backend_load_start`, `error.stage="backend_load"`, and
 `run_end.status="error"`. Later native smoke lifecycle failures should keep the
@@ -105,7 +105,7 @@ Backend cleanup is a lifecycle invariant even when no `backend_close` event is
 emitted yet. Future schema revisions may add that event for resident backends
 that need observable server/process shutdown.
 
-For `native_serve` mode, startup emits backend load/warmup/reset events before
+For `serve` mode, startup emits backend load/warmup/reset events before
 `serve_ready`. Each `/infer` request emits `serve_request_start` and
 `serve_request_end` with request timing, output shape, and action summary. Bad
 requests also emit an `error` event and a failed `serve_request_end`. Startup
@@ -119,13 +119,13 @@ single synthetic observation rather than running a simulator episode.
 Native smoke errors should be precise enough to guide upstream script
 migration. Supported `error.stage` values are:
 
-- `native_preflight` for blocked readiness before model loading;
+- `preflight` for blocked readiness before model loading;
 - `processor_smoke_observation` for synthetic observation construction;
 - `backend_load` for importing/loading native model objects and runtime assets;
 - `backend_warmup` for warmup failures;
 - `backend_reset` for reset/session initialization failures;
 - `inference` for the native model call and processor result path;
-- `action_contract` for invalid native action chunks.
+- `action_contract` for invalid action chunks.
 
 ## External Eval Fields
 
@@ -159,8 +159,8 @@ and keep the harness trace focused on orchestration metadata.
 `wam native-smoke <model-id>` should emit the normal backend lifecycle events:
 
 - `run_start`
-- `native_runtime_contract`
-- `native_readiness`
+- `runtime_contract`
+- `preflight`
 - `processor_smoke_observation`
 - `backend_load_start`
 - `backend_load`
@@ -178,9 +178,9 @@ and keep the harness trace focused on orchestration metadata.
 - `manifest_defaults`
 - `known_gaps`
 
-`native_runtime_contract` should include:
+`runtime_contract` should include:
 
-- `backend`, `processor`, `workload`, and native `mode`;
+- `backend`, `processor`, `workload`, and `mode`;
 - `runtime_mode`: `in_process` when the `wam` process directly loads and calls
   the model, or `resident_server` when the backend starts/connects to a
   job-local policy server;
@@ -198,13 +198,13 @@ and keep the harness trace focused on orchestration metadata.
 
 `processor_smoke_observation` should include an `observation_summary`. If
 native readiness is `blocked` before load, the trace should contain
-`native_runtime_contract`, `native_readiness`, an `error` with
-`stage="native_preflight"` plus `trace_path`, and
+`runtime_contract`, `preflight`, an `error` with
+`stage="preflight"` plus `trace_path`, and
 `run_end.status="error"`. In that case `backend_load_start` is intentionally
 absent. If preflight passes and `backend.load()` fails later, the trace should
 still contain `backend_load_start`, `error`, and `run_end.status="error"`.
 
-`native_readiness` should include:
+`preflight` should include:
 
 - `status`: `ready`, `warning`, or `blocked`;
 - `backend` and `label`;
@@ -230,7 +230,7 @@ state keys, prompt, and session keys. It should not persist large image payloads
 inside the trace.
 
 `inference_end` should include action shape, `action_summary`, `action_contract`
-when a native action contract was checked, timing, memory, backend metadata, and
+when an action contract was checked, timing, memory, backend metadata, and
 warnings. This event is the first validation point for moving a model entry from
 an official-script reference path to a native product path.
 
@@ -243,7 +243,7 @@ an official-script reference path to a native product path.
 - `rectangular`;
 - `errors`.
 
-If the backend returns an invalid native action chunk, emit an `error` with
+If the backend returns an invalid action chunk, emit an `error` with
 `stage="action_contract"` and do not emit a successful `inference_end` or
 `serve_request_end`.
 
@@ -252,8 +252,8 @@ If the backend returns an invalid native action chunk, emit an `error` with
 `wam serve <model-id>` with a native backend should emit:
 
 - `serve_start`
-- `native_runtime_contract`
-- `native_readiness`
+- `runtime_contract`
+- `preflight`
 - `backend_load_start`
 - `backend_load`
 - `backend_warmup`
@@ -264,8 +264,8 @@ If the backend returns an invalid native action chunk, emit an `error` with
 - `error` for failed requests
 - `backend_close`
 
-For blocked native readiness, `serve_start` should emit
-`native_runtime_contract`, `native_readiness`, `error.stage="native_preflight"`,
+For blocked backend preflight, `serve_start` should emit
+`runtime_contract`, `preflight`, `error.stage="preflight"`,
 and `backend_close` without
 `backend_load_start`.
 
@@ -289,7 +289,7 @@ and `backend_close` without
 - `replan_steps`
 - `action_chunk_shape`
 - `action_summary`
-- `action_contract` when a native action contract was checked
+- `action_contract` when an action contract was checked
 - `timing.wall_ms`
 - `memory`
 - `backend_metadata`
@@ -381,9 +381,9 @@ Artifacts should be keyed by `(episode_id, step_id, replan_id)` where possible.
 - `output_gate`
 - `output_gate_passed`
 - `output_gate_details`
-- `native_contract_gate`
-- `native_contract_gate_passed`
-- `native_contract_gate_details`
+- `runtime_contract_gate`
+- `runtime_contract_gate_passed`
+- `runtime_contract_gate_details`
 - `decision`: `faster`, `slower`, `same`, `invalid`, or `not_comparable`
 - `warnings`
 
@@ -392,7 +392,7 @@ should never claim a speedup when output checks fail.
 
 The baseline and variant summaries include trace path, run id, manifest id,
 backend, processor, mode, optimization profile names, latency statistics,
-native runtime contract payload, action shapes, action summaries, optional
+runtime contract payload, action shapes, action summaries, optional
 future-frame summaries, optional value summaries, and errors.
 When both traces provide action summaries, the output gate also checks that
 action values are finite and that summary drift stays under the configured
@@ -405,8 +405,8 @@ summaries are compared after stripping artifact-path fields, so run-specific
 file paths do not invalidate a comparison. Value summaries are compared with
 the same numeric drift tolerance used by the current action-summary gate.
 
-When either trace contains `native_runtime_contract`, `wam compare` also applies
-a native contract gate. It permits differences in requested optimization profile
+When either trace contains `runtime_contract`, `wam compare` also applies
+a runtime contract gate. It permits differences in requested optimization profile
 status, but treats backend, processor, workload, mode, supported optimization
 set, runtime mode, runtime loader, model adapter, processor modality,
 deployment, or backend config-key differences as invalid for a speedup claim.

@@ -59,7 +59,7 @@ def test_cli_doctor_checks_fake_model_without_fixing_environment(tmp_path, monke
     assert "Status: ok" in captured.out
 
 
-def test_cli_doctor_reports_native_backend_requirements(tmp_path, monkeypatch, capsys) -> None:
+def test_cli_doctor_reports_backend_requirements(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.delenv("WAM_FASTWAM_REPO", raising=False)
 
     exit_code = main(
@@ -77,33 +77,33 @@ def test_cli_doctor_reports_native_backend_requirements(tmp_path, monkeypatch, c
 
     assert exit_code == 0
     assert "Deployment: product=native_backend_migration" in captured.out
-    assert "Native backend: fastwam (FastWAM)" in captured.out
-    assert "Native runtime mode: in_process" in captured.out
-    assert "Native runtime loader: fastwam_runtime_loader" in captured.out
-    assert "Native model adapter: fastwam_model" in captured.out
-    assert "Native readiness: blocked" in captured.out
-    assert "Native required assets: checkpoint,dataset_stats" in captured.out
+    assert "Backend target: fastwam (FastWAM)" in captured.out
+    assert "Backend runtime mode: in_process" in captured.out
+    assert "Backend runtime loader: fastwam_runtime_loader" in captured.out
+    assert "Backend model adapter: fastwam_model" in captured.out
+    assert "Backend readiness: blocked" in captured.out
+    assert "Backend required assets: checkpoint,dataset_stats" in captured.out
     assert (
-        "Native runtime assets: checkpoint,dataset_stats,model_base,tokenizer_components"
+        "Backend runtime assets: checkpoint,dataset_stats,model_base,tokenizer_components"
         in captured.out
     )
-    assert "Native missing required assets: checkpoint,dataset_stats" in captured.out
-    assert "Native missing runtime assets: model_base,tokenizer_components" in captured.out
+    assert "Backend missing required assets: checkpoint,dataset_stats" in captured.out
+    assert "Backend missing runtime assets: model_base,tokenizer_components" in captured.out
     assert str(tmp_path / "cache" / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B") in captured.out
     assert "Upstream repo: missing" in captured.out
     assert "Upstream env: WAM_FASTWAM_REPO" in captured.out
     assert "src/fastwam/runtime.py" in captured.out
-    assert "Native next steps:" in captured.out
+    assert "Backend next steps:" in captured.out
     assert "Set WAM_FASTWAM_REPO=<repo> or pass --upstream-dir <repo>" in captured.out
     assert (
         f"wam prepare fastwam-libero --cache-dir {tmp_path / 'cache'} --download"
         in captured.out
     )
-    assert "Run inside the backend container or install native dependencies" in captured.out
+    assert "Run inside the backend container or install backend dependencies" in captured.out
     assert "Status: blocked" in captured.out
 
 
-def test_cli_doctor_json_reports_native_preflight_gate(tmp_path, monkeypatch, capsys) -> None:
+def test_cli_doctor_json_reports_preflight_gate(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.delenv("WAM_FASTWAM_REPO", raising=False)
 
     exit_code = main(
@@ -124,18 +124,18 @@ def test_cli_doctor_json_reports_native_preflight_gate(tmp_path, monkeypatch, ca
     assert exit_code == 0
     assert payload["status"] == "blocked"
     assert payload["model_id"] == "fastwam-libero"
-    assert payload["native"]["declared"] is True
-    assert payload["native"]["runtime_mode"] == "in_process"
-    assert payload["native"]["runtime_loader"] == "fastwam_runtime_loader"
-    assert payload["native"]["model_adapter"] == "fastwam_model"
-    assert payload["native"]["status"] == "blocked"
-    assert payload["native"]["upstream"]["status"] == "missing"
-    assert payload["native"]["missing_required_assets"] == ["checkpoint", "dataset_stats"]
-    assert payload["native"]["next_steps"][0].startswith(
+    assert payload["backend"]["declared"] is True
+    assert payload["backend"]["runtime_mode"] == "in_process"
+    assert payload["backend"]["runtime_loader"] == "fastwam_runtime_loader"
+    assert payload["backend"]["model_adapter"] == "fastwam_model"
+    assert payload["backend"]["status"] == "blocked"
+    assert payload["backend"]["upstream"]["status"] == "missing"
+    assert payload["backend"]["missing_required_assets"] == ["checkpoint", "dataset_stats"]
+    assert payload["backend"]["next_steps"][0].startswith(
         "Set WAM_FASTWAM_REPO=<repo> or pass --upstream-dir <repo>"
     )
-    assert "wam prepare fastwam-libero" in payload["native"]["next_steps"][1]
-    assert "Run inside the backend container" in payload["native"]["next_steps"][2]
+    assert "wam prepare fastwam-libero" in payload["backend"]["next_steps"][1]
+    assert "Run inside the backend container" in payload["backend"]["next_steps"][2]
     assert payload["assets"][2]["expected_path"].endswith(
         "diffsynth-models/Wan-AI/Wan2.2-TI2V-5B"
     )
@@ -173,7 +173,7 @@ def test_cli_doctor_strict_keeps_fake_model_zero(tmp_path, monkeypatch, capsys) 
     assert payload["status"] == "ok"
 
 
-def test_cli_run_reports_native_preflight_without_traceback(tmp_path, monkeypatch, capsys) -> None:
+def test_cli_run_reports_preflight_without_traceback(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.delenv("WAM_FASTWAM_REPO", raising=False)
     input_path = tmp_path / "obs.json"
     input_path.write_text(
@@ -204,7 +204,7 @@ def test_cli_run_reports_native_preflight_without_traceback(tmp_path, monkeypatc
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "error: fastwam native readiness is blocked" in captured.err
+    assert "error: fastwam preflight is blocked" in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -221,7 +221,7 @@ def test_cli_run_real_wam_without_input_prints_next_steps(capsys) -> None:
     assert "Traceback" not in captured.err
 
 
-def test_cli_doctor_uses_cache_dir_for_native_readiness(tmp_path, monkeypatch, capsys) -> None:
+def test_cli_doctor_uses_cache_dir_for_backend_readiness(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.delenv("WAM_FASTWAM_REPO", raising=False)
     repo = tmp_path / "FastWAM"
     write_fastwam_required_paths(repo)
@@ -252,10 +252,10 @@ def test_cli_doctor_uses_cache_dir_for_native_readiness(tmp_path, monkeypatch, c
 
     assert exit_code == 0
     assert "Deployment: product=native_backend_migration" in captured.out
-    assert "Native readiness: blocked" in captured.out
-    assert "Native missing required assets" not in captured.out
-    assert "Native missing runtime assets: model_base,tokenizer_components" in captured.out
-    assert "Native missing Python modules:" in captured.out
+    assert "Backend readiness: blocked" in captured.out
+    assert "Backend missing required assets" not in captured.out
+    assert "Backend missing runtime assets: model_base,tokenizer_components" in captured.out
+    assert "Backend missing Python modules:" in captured.out
     assert "torch" in captured.out
     assert f"Upstream repo: present ({repo.resolve()})" in captured.out
 

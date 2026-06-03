@@ -6,24 +6,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from wam_harness.core.action_contract import ActionContractError
+from wam_harness.core.backend_capabilities import (
+    action_contract_enabled,
+    preflight_report,
+    runtime_contract_payload,
+)
 from wam_harness.core.inference_trace import (
     inference_result_payload,
     observation_summary,
 )
 from wam_harness.core.memory import memory_snapshot
-from wam_harness.backends.native_support.contract import native_runtime_contract_payload
-from wam_harness.backends.native_support.readiness import (
-    NativePreflightError,
-    assert_native_preflight,
-    native_readiness_payload,
-)
-from wam_harness.backends.native_support.runtime import (
-    NATIVE_INPUT_RUN_SPEC,
-    NATIVE_RUN_SPEC,
-    native_backend_name,
-    resolve_native_runtime,
-)
+from wam_harness.core.preflight import PreflightError, assert_preflight
 from wam_harness.core.registry import Registry, default_registry
+from wam_harness.core.runtime import INPUT_RUN_SPEC, RUN_SPEC
 from wam_harness.core.tracing import TraceWriter
 from wam_harness.core.types import (
     InferenceRequest,
@@ -85,16 +80,15 @@ class Runner:
         runtime_options: dict[str, object] | None = None,
     ) -> RunSummary:
         reference_manifest = self.registry.load_manifest(model_id)
-        if observation is None and native_backend_name(reference_manifest) is not None:
-            raise RunInputRequiredError(_run_input_required_message(model_id))
-
-        runtime_plan = resolve_native_runtime(
+        runtime_plan = self.registry.resolve_runtime(
             reference_manifest,
-            NATIVE_INPUT_RUN_SPEC if observation is not None else NATIVE_RUN_SPEC,
+            INPUT_RUN_SPEC if observation is not None else RUN_SPEC,
             upstream_dir=upstream_dir,
             cache_dir=cache_dir,
             backend_overrides=backend_overrides or {},
         )
+        if observation is None and runtime_plan.transformed:
+            raise RunInputRequiredError(_run_input_required_message(model_id))
         manifest = runtime_plan.manifest
         profiles = self.registry.build_optimization_profiles(manifest, enabled_opts or [])
         backend = self.registry.create_backend(manifest, profiles)
@@ -133,18 +127,16 @@ class Runner:
                     synthetic_observation=manifest.workload_name == "processor_smoke",
                 )
                 try:
-                    contract = native_runtime_contract_payload(
-                        manifest,
-                        profiles,
+                    contract = runtime_contract_payload(
+                        backend,
                         processor=processor,
-                        backend=backend,
                     )
                     if contract is not None:
-                        trace.write("native_runtime_contract", **contract)
-                    readiness = native_readiness_payload(backend)
-                    if readiness is not None:
-                        trace.write("native_readiness", **readiness)
-                    assert_native_preflight(readiness)
+                        trace.write("runtime_contract", **contract)
+                    report = preflight_report(backend)
+                    if report is not None:
+                        trace.write("preflight", **report.to_trace_payload())
+                    assert_preflight(report)
                     load_start = time.perf_counter()
                     trace.write("backend_load_start")
                     backend.load()
@@ -204,6 +196,7 @@ class Runner:
                                 result,
                                 expected_horizon=effective_action_horizon,
                                 wall_ms=infer_wall_ms,
+                                validate_action_contract=action_contract_enabled(backend),
                             )
                             pending_actions = list(result.action_chunk.actions)
                             workload.mark_replan()
@@ -248,14 +241,14 @@ class Runner:
                 except Exception as exc:
                     trace.write(
                         "error",
-                        stage="native_preflight"
-                        if isinstance(exc, NativePreflightError)
+                        stage="preflight"
+                        if isinstance(exc, PreflightError)
                         else "action_contract"
                         if isinstance(exc, ActionContractError)
                         else "runner",
                         error_type=type(exc).__name__,
                         message=str(exc),
-                        recoverable=isinstance(exc, NativePreflightError),
+                        recoverable=isinstance(exc, PreflightError),
                         backend=manifest.backend_name,
                     )
                     trace.write(
@@ -310,6 +303,5 @@ def _run_input_required_message(model_id: str) -> str:
         "Try:\n"
         f"  wam run {model_id} --input obs.json --output action.json\n"
         f"  wam eval {model_id} --workload libero-single-task --task-id 0 --num-trials 1\n"
-        f"  wam serve {model_id}\n"
-        f"  wam native-smoke {model_id}  # maintainer backend smoke"
+        f"  wam serve {model_id}"
     )

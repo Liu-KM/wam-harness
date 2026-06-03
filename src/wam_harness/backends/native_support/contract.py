@@ -30,9 +30,6 @@ def native_runtime_contract_payload(
     """Describe the native runtime contract recorded before backend load."""
 
     mode = str(manifest.backend.get("mode", ""))
-    if not mode.startswith("native"):
-        return None
-
     payload: dict[str, object] = {
         "native": True,
         "backend": manifest.backend_name,

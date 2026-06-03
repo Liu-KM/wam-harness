@@ -218,7 +218,7 @@ def test_native_smoke_traces_backend_load_failure(tmp_path) -> None:
     ]
     assert [event["event"] for event in events] == [
         "run_start",
-        "native_runtime_contract",
+        "runtime_contract",
         "processor_smoke_observation",
         "backend_load_start",
         "error",

@@ -84,11 +84,11 @@ Current comparison is intentionally conservative:
   summary drift beyond `--max-action-drift` make the comparison invalid; if
   traces provide `future_frames` or `value`, compare also checks those JSON-safe
   summaries while ignoring run-specific artifact paths;
-- native contract gate: if either trace contains `native_runtime_contract`, the
-  native backend/processor/workload contract must match except for requested
+- runtime contract gate: if either trace contains `runtime_contract`, the
+  backend/processor/workload runtime contract must match except for requested
   optimization profile status;
 - decision: `faster`, `slower`, `same`, `invalid`, or `not_comparable`;
-- speedup is never reported if the action shape gate fails, the native contract
+- speedup is never reported if the action shape gate fails, the runtime contract
   gate fails, or the action shape gate is unavailable.
 
 Example:
@@ -121,7 +121,7 @@ accepted by `wam serve <model> --smoke`, where the server is started in an
 internal health-check mode that uses the registered processor's
 `smoke_observation()`. For reference entries that declare
 `backend.config.native_backend`, `wam serve` maps the model entry to
-`mode: native_serve`; it does not try to run an official simulator script as a
+`mode: serve`; it does not try to run an official simulator script as a
 server.
 
 When the backend container or job mounts upstream source outside the model
@@ -157,7 +157,7 @@ wam native-smoke fastwam-libero \
 ```
 
 `native-smoke` writes native readiness before model load. If readiness is
-`blocked`, it fails immediately with a `native_preflight` trace error instead of
+`blocked`, it fails immediately with a `preflight` trace error instead of
 trying to import or load the upstream model. Add `--require-ready` for stricter
 container smoke runs where runtime assets such as tokenizer or model-base caches
 must also be present before load:
@@ -173,14 +173,14 @@ This command is deliberately not named `run` or `eval`: it is not a real
 benchmark, not a simulator evaluation, and not the polished user path. Its job
 is to prove that a backend can execute a checkpoint under harness control before
 the public model entry switches away from `external_eval`. A successful native
-smoke must also pass the native action contract: non-empty rectangular actions,
+smoke must also pass the action contract: non-empty rectangular actions,
 finite values, the requested action horizon, and the declared action dimension
 when the model entry provides one.
 
 `wam run <model> --input obs.json` is the user-facing one-shot inference path.
 The input file must contain an observation object with images, optional state,
 prompt, history, session, and metadata. When a reference model entry declares
-`backend.config.native_backend`, `run` maps it to `mode: native_run` and uses a
+`backend.config.native_backend`, `run` maps it to `mode: run` and uses a
 single external observation workload. It does not execute the official evaluator
 and does not use synthetic smoke observations.
 

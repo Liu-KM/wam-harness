@@ -7,7 +7,7 @@ from pathlib import Path
 
 from wam_harness.core.action_contract import (
     ActionContractError,
-    validate_native_action_contract,
+    validate_action_contract,
 )
 from wam_harness.core.action_summary import action_chunk_summary
 from wam_harness.core.memory import memory_snapshot
@@ -106,7 +106,7 @@ class NativeSmokeRunner:
                     known_gaps=manifest.known_gaps,
                     synthetic_observation=True,
                 )
-                stage = "native_preflight"
+                stage = "preflight"
                 try:
                     contract = native_runtime_contract_payload(
                         manifest,
@@ -115,10 +115,10 @@ class NativeSmokeRunner:
                         backend=backend,
                     )
                     if contract is not None:
-                        trace.write("native_runtime_contract", **contract)
+                        trace.write("runtime_contract", **contract)
                     readiness = native_readiness_payload(backend)
                     if readiness is not None:
-                        trace.write("native_readiness", **readiness)
+                        trace.write("preflight", **readiness)
                     assert_native_preflight(readiness, require_ready=require_ready)
                     stage = "processor_smoke_observation"
                     observation = processor.smoke_observation()
@@ -172,7 +172,7 @@ class NativeSmokeRunner:
                         result.action_chunk.action_dim,
                     ]
                     stage = "action_contract"
-                    action_contract = validate_native_action_contract(
+                    action_contract = validate_action_contract(
                         manifest,
                         result.action_chunk,
                         expected_horizon=effective_action_horizon,
@@ -204,7 +204,7 @@ class NativeSmokeRunner:
                     setattr(exc, "trace_path", trace_path)
                     trace.write(
                         "error",
-                        stage="native_preflight"
+                        stage="preflight"
                         if isinstance(exc, NativePreflightError)
                         else "action_contract"
                         if isinstance(exc, ActionContractError)

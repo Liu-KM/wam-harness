@@ -4,10 +4,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from wam_harness.core.manifest import manifest_from_dict
+from wam_harness.core.runtime import (
+    RuntimeOptions,
+    RuntimePlan,
+    RuntimeResolutionError,
+    RuntimeSpec,
+    validate_runtime_spec,
+)
 from wam_harness.core.types import Manifest
 
 
-class NativeRuntimeError(RuntimeError):
+class NativeRuntimeError(RuntimeResolutionError):
     """Raised when a reference model entry cannot be mapped to a native runtime."""
 
 
@@ -114,6 +121,34 @@ def resolve_native_runtime(
         workload_name=spec.workload_name,
         native_backend=backend_name,
         native_migration=True,
+    )
+
+
+def native_runtime_resolver(
+    manifest: Manifest,
+    spec: RuntimeSpec,
+    options: RuntimeOptions,
+) -> RuntimePlan | None:
+    validate_runtime_spec(spec)
+    backend_name = native_backend_name(manifest)
+    if backend_name is None:
+        return None
+    runtime_manifest = native_runtime_manifest(
+        manifest,
+        mode=spec.mode,
+        workload_name=spec.workload_name,
+        workload_config=spec.workload_config,
+        upstream_dir=options.upstream_dir,
+        cache_dir=options.cache_dir,
+        backend_overrides=options.backend_overrides,
+    )
+    return RuntimePlan(
+        reference_manifest=manifest,
+        manifest=runtime_manifest,
+        mode=spec.mode,
+        workload_name=spec.workload_name,
+        mapped_backend=backend_name,
+        transformed=True,
     )
 
 

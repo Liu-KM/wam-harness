@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from wam_harness.backends.native_support.readiness import NativePreflightError
+from wam_harness.backends.native_support.runtime import native_runtime_resolver
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry
 from wam_harness.core.types import (
     ActionChunk,
@@ -92,12 +93,30 @@ class CapturingBackend:
     def native_model_adapter_name(self) -> str:
         return "test_serve_adapter"
 
+    def runtime_contract(self, *, processor: object | None = None) -> dict[str, object]:
+        if self.manifest.backend_name == "fake":
+            return None
+        payload = {
+            "backend": self.manifest.backend_name,
+            "processor": self.manifest.processor_name,
+            "workload": self.manifest.workload_name,
+            "mode": str(self.manifest.backend.get("mode", "serve")),
+            "model_adapter": self.native_model_adapter_name(),
+        }
+        if processor is not None and hasattr(processor, "modality_limits"):
+            payload["processor_modality"] = processor.modality_limits()
+        return payload
+
+    def action_contract_enabled(self) -> bool:
+        return self.contract_shape
+
     def close(self) -> None:
         return
 
 
 def _serve_registry() -> tuple[Registry, list[CapturingBackend]]:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     created: list[CapturingBackend] = []
 
     def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> CapturingBackend:
@@ -233,6 +252,7 @@ def test_serve_returns_and_traces_future_and_value_outputs(tmp_path) -> None:
 
 def test_serve_maps_reference_entry_to_native_backend(tmp_path) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     created: list[CapturingBackend] = []
 
     def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> CapturingBackend:
@@ -253,7 +273,7 @@ def test_serve_maps_reference_entry_to_native_backend(tmp_path) -> None:
     )
 
     assert app.manifest.backend_name == "fastwam"
-    assert app.manifest.backend["mode"] == "native_serve"
+    assert app.manifest.backend["mode"] == "serve"
     assert app.manifest.backend["config"]["upstream_dir"] == str(tmp_path / "FastWAM")
     assert app.manifest.backend["config"]["cache_dir"] == str(tmp_path / "cache")
     assert app.manifest.backend["config"]["task"] == "libero_10"
@@ -275,16 +295,16 @@ def test_serve_maps_reference_entry_to_native_backend(tmp_path) -> None:
     assert created[0].last_request.replan_steps == 10
     app.close()
     events = read_events(app.trace_path)
-    contract = [event for event in events if event["event"] == "native_runtime_contract"][0]
-    assert contract["mode"] == "native_serve"
+    contract = [event for event in events if event["event"] == "runtime_contract"][0]
+    assert contract["mode"] == "serve"
     assert contract["backend"] == "fastwam"
     assert contract["workload"] == "serve"
     assert contract["model_adapter"] == "test_serve_adapter"
     assert contract["processor_modality"]["processor"] == "fastwam_libero"
 
 
-def test_serve_traces_native_readiness_before_native_load_failure(tmp_path) -> None:
-    with pytest.raises(NativePreflightError, match="fastwam native readiness is blocked"):
+def test_serve_traces_preflight_before_backend_load_failure(tmp_path) -> None:
+    with pytest.raises(PreflightError, match="fastwam preflight is blocked"):
         ServeApp(
             "fastwam-libero",
             trace_dir=tmp_path,
@@ -297,13 +317,13 @@ def test_serve_traces_native_readiness_before_native_load_failure(tmp_path) -> N
     names = [event["event"] for event in events]
     assert names[:4] == [
         "serve_start",
-        "native_runtime_contract",
-        "native_readiness",
+        "runtime_contract",
+        "preflight",
         "error",
     ]
     contract = events[1]
     readiness = events[2]
-    assert contract["mode"] == "native_serve"
+    assert contract["mode"] == "serve"
     assert contract["backend"] == "fastwam"
     assert contract["runtime_mode"] == "in_process"
     assert contract["runtime_loader"] == "fastwam_runtime_loader"
@@ -312,7 +332,7 @@ def test_serve_traces_native_readiness_before_native_load_failure(tmp_path) -> N
     assert readiness["runtime_mode"] == "in_process"
     assert readiness["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness["upstream"]["status"] == "missing"
-    assert events[3]["stage"] == "native_preflight"
+    assert events[3]["stage"] == "preflight"
     assert events[3]["recoverable"] is True
     assert events[-1]["event"] == "backend_close"
 

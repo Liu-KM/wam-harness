@@ -105,8 +105,8 @@ validated.
 
 `wam run --input` and `wam serve` already use the native backend declaration
 when present. A reference entry with `backend.config.native_backend` is
-temporarily mapped to `mode: native_run` for an explicit one-shot observation or
-`mode: native_serve` for resident HTTP inference. Synthetic observations stay in
+temporarily mapped to `mode: run` for an explicit one-shot observation or
+`mode: serve` for resident HTTP inference. Synthetic observations stay in
 `wam native-smoke` and `wam serve --smoke`. This keeps official eval scripts out
 of the product inference paths. Both paths accept the same backend-side
 overrides, such as `--upstream-dir` for mounted upstream source repositories.

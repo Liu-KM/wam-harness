@@ -7,7 +7,7 @@ from wam_harness.core.types import ActionChunk, Manifest
 
 
 class ActionContractError(ValueError):
-    """Raised when a native backend returns an invalid action chunk."""
+    """Raised when a backend returns an invalid action chunk."""
 
 
 @dataclass(frozen=True)
@@ -30,13 +30,13 @@ class ActionContractCheck:
         }
 
 
-def validate_native_action_contract(
+def validate_action_contract(
     manifest: Manifest,
     chunk: ActionChunk,
     *,
     expected_horizon: int,
 ) -> ActionContractCheck:
-    """Validate the minimum action contract for native product inference."""
+    """Validate the minimum action contract for product inference."""
 
     expected_dim = _expected_action_dim(manifest)
     observed_shape = [chunk.horizon, chunk.action_dim]
@@ -70,20 +70,21 @@ def validate_native_action_contract(
     )
     if errors:
         raise ActionContractError(
-            f"{manifest.id} native action contract failed: {'; '.join(errors)}"
+            f"{manifest.id} action contract failed: {'; '.join(errors)}"
         )
     return check
 
 
-def maybe_validate_native_action_contract(
+def maybe_validate_action_contract(
     manifest: Manifest,
     chunk: ActionChunk,
     *,
     expected_horizon: int,
+    enabled: bool,
 ) -> ActionContractCheck | None:
-    if not _is_native_mode(manifest):
+    if not enabled:
         return None
-    return validate_native_action_contract(
+    return validate_action_contract(
         manifest,
         chunk,
         expected_horizon=expected_horizon,
@@ -98,10 +99,6 @@ def _expected_action_dim(manifest: Manifest) -> int | None:
     if value is None:
         return None
     return int(value)
-
-
-def _is_native_mode(manifest: Manifest) -> bool:
-    return str(manifest.backend.get("mode", "")).startswith("native_")
 
 
 def _is_rectangular(chunk: ActionChunk) -> bool:

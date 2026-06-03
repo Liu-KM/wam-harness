@@ -8,7 +8,7 @@ from wam_harness.core.model_entry import (
     PrepareSummary,
     load_model_entries,
 )
-from wam_harness.core.model_entry_labels import (
+from wam_harness.model_entry_labels import (
     model_assets_label,
     model_deployment_label,
     model_input_label,
@@ -77,7 +77,7 @@ def render_doctor(summary: DoctorSummary) -> str:
         else:
             lines.append("Assets: none declared")
 
-        lines.extend(summary.native_lines)
+        lines.extend(summary.backend_lines)
 
     lines.append(f"Status: {summary.status}")
     return "\n".join(lines)

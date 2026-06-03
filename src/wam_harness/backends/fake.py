@@ -37,6 +37,15 @@ class FakeBackend:
         self.warmed = False
         self.loaded = False
 
+    def runtime_contract(self, *, processor: object | None = None) -> dict[str, object] | None:
+        return None
+
+    def preflight(self) -> None:
+        return None
+
+    def action_contract_enabled(self) -> bool:
+        return False
+
     def runtime_info(self) -> RuntimeInfo:
         defaults = self.manifest.defaults
         return RuntimeInfo(

@@ -18,17 +18,18 @@ from wam_harness.cli_render import (
     render_model_list,
     render_prepare,
 )
-from wam_harness.backends.native_support.readiness import NativePreflightError
 from wam_harness.backends.native_support.smoke import (
     NativeSmokeRunner,
     NativeSmokeRunnerError,
 )
+from wam_harness.backends.native_support.readiness import NativePreflightError
 from wam_harness.core.observation_io import (
     dict_or_empty,
     load_json_payload,
     observation_from_payload,
     write_json_payload,
 )
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.runner import RunInputRequiredError, Runner
 from wam_harness.serve import serve, smoke_serve
 
@@ -405,10 +406,11 @@ def _set_override_if_present(overrides: dict[str, str], key: str, value: object)
 
 
 _CLI_KNOWN_ERRORS = (
-    NativePreflightError,
+    PreflightError,
     ActionContractError,
     EvalRunnerError,
     NativeSmokeRunnerError,
+    NativePreflightError,
     RunInputRequiredError,
 )
 

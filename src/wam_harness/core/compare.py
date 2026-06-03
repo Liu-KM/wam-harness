@@ -21,7 +21,7 @@ class TraceStats:
     processor: str | None
     mode: str | None
     profiles: list[str]
-    native_contract: dict[str, Any] | None
+    runtime_contract: dict[str, Any] | None
     latency_samples_ms: list[float]
     action_shapes: list[list[int]]
     action_summaries: list[dict[str, Any]]
@@ -41,7 +41,7 @@ class TraceStats:
             "processor": self.processor,
             "mode": self.mode,
             "profiles": self.profiles,
-            "native_contract": self.native_contract,
+            "runtime_contract": self.runtime_contract,
             "latency_ms": self.latency_summary(),
             "action_shapes": self.action_shapes,
             "action_summaries": self.action_summaries,
@@ -60,9 +60,9 @@ class CompareSummary:
     output_gate: str
     output_gate_passed: bool | None
     output_gate_details: dict[str, object]
-    native_contract_gate: str
-    native_contract_gate_passed: bool | None
-    native_contract_gate_details: dict[str, object]
+    runtime_contract_gate: str
+    runtime_contract_gate_passed: bool | None
+    runtime_contract_gate_details: dict[str, object]
     decision: str
     warnings: list[str]
 
@@ -75,9 +75,9 @@ class CompareSummary:
             "output_gate": self.output_gate,
             "output_gate_passed": self.output_gate_passed,
             "output_gate_details": self.output_gate_details,
-            "native_contract_gate": self.native_contract_gate,
-            "native_contract_gate_passed": self.native_contract_gate_passed,
-            "native_contract_gate_details": self.native_contract_gate_details,
+            "runtime_contract_gate": self.runtime_contract_gate,
+            "runtime_contract_gate_passed": self.runtime_contract_gate_passed,
+            "runtime_contract_gate_details": self.runtime_contract_gate_details,
             "decision": self.decision,
             "warnings": self.warnings,
         }
@@ -102,7 +102,7 @@ def compare_traces(
         variant_stats,
         max_action_drift=max_action_drift,
     )
-    contract_gate, contract_gate_passed, contract_gate_details = _native_contract_gate(
+    contract_gate, contract_gate_passed, contract_gate_details = _runtime_contract_gate(
         baseline_stats,
         variant_stats,
     )
@@ -118,7 +118,7 @@ def compare_traces(
     elif output_gate_passed is None:
         warnings.append("action shape gate unavailable")
     if contract_gate_passed is False:
-        warnings.append("native runtime contract mismatch")
+        warnings.append("runtime contract mismatch")
 
     metric = "latency_ms.mean"
     baseline_mean = baseline_stats.latency_summary()["mean"]
@@ -152,9 +152,9 @@ def compare_traces(
         output_gate=output_gate,
         output_gate_passed=output_gate_passed,
         output_gate_details=output_gate_details,
-        native_contract_gate=contract_gate,
-        native_contract_gate_passed=contract_gate_passed,
-        native_contract_gate_details=contract_gate_details,
+        runtime_contract_gate=contract_gate,
+        runtime_contract_gate_passed=contract_gate_passed,
+        runtime_contract_gate_details=contract_gate_details,
         decision=decision,
         warnings=warnings,
     )
@@ -196,7 +196,7 @@ def load_trace_stats(path: str | Path) -> TraceStats:
         processor=metadata.get("processor"),
         mode=metadata.get("mode"),
         profiles=_profile_names(metadata.get("optimization_profiles", [])),
-        native_contract=_native_contract(events),
+        runtime_contract=_runtime_contract(events),
         latency_samples_ms=latencies,
         action_shapes=shapes,
         action_summaries=action_summaries,
@@ -255,9 +255,8 @@ def _profile_names(raw_profiles: object) -> list[str]:
     return names
 
 
-def _native_contract(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _runtime_contract(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     contract_keys = {
-        "native",
         "backend",
         "processor",
         "workload",
@@ -272,7 +271,7 @@ def _native_contract(events: list[dict[str, Any]]) -> dict[str, Any] | None:
         "processor_modality",
     }
     for event in events:
-        if event.get("event") != "native_runtime_contract":
+        if event.get("event") != "runtime_contract":
             continue
         payload = {key: event[key] for key in contract_keys if key in event}
         return dict(payload)
@@ -473,22 +472,22 @@ def _future_value_gate(
     return True, details
 
 
-def _native_contract_gate(
+def _runtime_contract_gate(
     baseline: TraceStats,
     variant: TraceStats,
 ) -> tuple[str, bool | None, dict[str, object]]:
-    if baseline.native_contract is None and variant.native_contract is None:
-        return "native_contract_unavailable", None, {}
-    if baseline.native_contract is None or variant.native_contract is None:
-        return "native_contract_presence", False, {
-            "baseline_has_contract": baseline.native_contract is not None,
-            "variant_has_contract": variant.native_contract is not None,
+    if baseline.runtime_contract is None and variant.runtime_contract is None:
+        return "runtime_contract_unavailable", None, {}
+    if baseline.runtime_contract is None or variant.runtime_contract is None:
+        return "runtime_contract_presence", False, {
+            "baseline_has_contract": baseline.runtime_contract is not None,
+            "variant_has_contract": variant.runtime_contract is not None,
         }
 
-    baseline_key = _comparable_native_contract(baseline.native_contract)
-    variant_key = _comparable_native_contract(variant.native_contract)
+    baseline_key = _comparable_runtime_contract(baseline.runtime_contract)
+    variant_key = _comparable_runtime_contract(variant.runtime_contract)
     if baseline_key == variant_key:
-        return "native_contract_match", True, {}
+        return "runtime_contract_match", True, {}
 
     differences = {
         key: {
@@ -498,10 +497,10 @@ def _native_contract_gate(
         for key in sorted(set(baseline_key) | set(variant_key))
         if baseline_key.get(key) != variant_key.get(key)
     }
-    return "native_contract_match", False, {"differences": differences}
+    return "runtime_contract_match", False, {"differences": differences}
 
 
-def _comparable_native_contract(contract: dict[str, Any]) -> dict[str, Any]:
+def _comparable_runtime_contract(contract: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value
         for key, value in contract.items()

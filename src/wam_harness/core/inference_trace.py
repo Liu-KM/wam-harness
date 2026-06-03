@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from wam_harness.core.action_contract import maybe_validate_native_action_contract
+from wam_harness.core.action_contract import maybe_validate_action_contract
 from wam_harness.core.action_summary import action_chunk_summary
 from wam_harness.core.memory import memory_snapshot
 from wam_harness.core.types import InferenceResult, Manifest
@@ -28,12 +28,14 @@ def inference_result_payload(
     *,
     expected_horizon: int,
     wall_ms: float,
+    validate_action_contract: bool = False,
     memory: dict[str, Any] | None = None,
 ) -> dict[str, object]:
-    action_contract = maybe_validate_native_action_contract(
+    action_contract = maybe_validate_action_contract(
         manifest,
         result.action_chunk,
         expected_horizon=expected_horizon,
+        enabled=validate_action_contract,
     )
     return {
         "action_chunk_len": result.action_chunk.horizon,

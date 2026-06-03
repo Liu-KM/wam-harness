@@ -4,9 +4,7 @@ import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
 
-from wam_harness.backends.native import NativeReadiness, NativeRequirements
 from wam_harness.core._utils import (
     csv_text,
     default_cache_dir,
@@ -14,18 +12,14 @@ from wam_harness.core._utils import (
     ordered_unique as _ordered_unique,
 )
 from wam_harness.core.assets import AssetDownloader, AssetError, HuggingFaceAssetDownloader
+from wam_harness.core.backend_capabilities import preflight_report
 from wam_harness.core.manifest import list_builtin_manifest_ids, load_builtin_manifest
-from wam_harness.backends.native_support.runtime import (
-    NATIVE_DOCTOR_SPEC,
-    NATIVE_PREPARE_SPEC,
-    native_backend_name,
-    resolve_native_runtime,
-)
-from wam_harness.core.model_entry_labels import (
+from wam_harness.model_entry_labels import (
     model_deployment_label,
     model_runtime_label,
 )
 from wam_harness.core.registry import RegistryError, default_registry
+from wam_harness.core.runtime import DOCTOR_SPEC, PREPARE_SPEC
 from wam_harness.core.types import Manifest
 
 
@@ -76,8 +70,8 @@ class DoctorSummary:
     deployment: str | None = None
     gpu: str | None = None
     assets: list[AssetStatus] = field(default_factory=list)
-    native_lines: list[str] = field(default_factory=list)
-    native: dict[str, object] | None = None
+    backend_lines: list[str] = field(default_factory=list)
+    backend: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -90,13 +84,8 @@ class DoctorSummary:
             "deployment": self.deployment,
             "gpu": self.gpu,
             "assets": [asset.to_dict() for asset in self.assets],
-            "native": self.native,
+            "backend": self.backend,
         }
-
-
-class NativeInspectableBackend(Protocol):
-    def native_requirements(self) -> NativeRequirements: ...
-    def native_readiness(self) -> NativeReadiness: ...
 
 
 def load_model_entries() -> list[Manifest]:
@@ -131,14 +120,14 @@ def doctor_model_entry(
     if any(asset.status == "missing" for asset in assets):
         status = "warning"
 
-    native_lines, native_status, native_payload = _native_backend_doctor_lines(
+    backend_lines, backend_status, backend_payload = _backend_doctor_lines(
         entry,
         cache_dir=cache,
         upstream_dir=upstream_dir,
     )
-    if native_status == "blocked":
+    if backend_status == "blocked":
         status = "blocked"
-    elif native_status != "ok" and status == "ok":
+    elif backend_status != "ok" and status == "ok":
         status = "warning"
 
     return DoctorSummary(
@@ -151,8 +140,8 @@ def doctor_model_entry(
         deployment=model_deployment_label(entry),
         gpu=gpu_status,
         assets=assets,
-        native_lines=native_lines,
-        native=native_payload,
+        backend_lines=backend_lines,
+        backend=backend_payload,
     )
 
 
@@ -208,7 +197,7 @@ def asset_statuses(
     statuses: list[AssetStatus] = []
     downloaded = downloaded_assets or set()
     asset_messages = messages or {}
-    native_roles = _native_asset_roles(entry, cache_dir)
+    backend_roles = _backend_asset_roles(entry, cache_dir)
     for name, raw in entry.assets.items():
         if not isinstance(raw, dict):
             continue
@@ -229,8 +218,8 @@ def asset_statuses(
                 size_bytes=size_bytes,
                 downloaded=asset_name in downloaded and status == "present",
                 message=asset_messages.get(asset_name),
-                required=asset_name in native_roles["required"],
-                runtime=asset_name in native_roles["runtime"],
+                required=asset_name in backend_roles["required"],
+                runtime=asset_name in backend_roles["runtime"],
             )
         )
     return statuses
@@ -299,180 +288,199 @@ def _expected_asset_path(local_path: object, cache_dir: Path) -> Path | None:
     return cache_dir / path
 
 
-def _native_asset_roles(entry: Manifest, cache_dir: Path) -> dict[str, set[str]]:
+def _backend_asset_roles(entry: Manifest, cache_dir: Path) -> dict[str, set[str]]:
     roles: dict[str, set[str]] = {"required": set(), "runtime": set()}
-    if native_backend_name(entry) is None and entry.backend_name == "external_eval":
-        return roles
     try:
-        manifest = resolve_native_runtime(
+        manifest = default_registry().resolve_runtime(
             entry,
-            NATIVE_PREPARE_SPEC,
+            PREPARE_SPEC,
             cache_dir=cache_dir,
         ).manifest
         backend = default_registry().create_backend(manifest, [])
     except (RegistryError, RuntimeError, ValueError):
         return roles
-    if not hasattr(backend, "native_requirements"):
+    requirements = _backend_requirements(backend)
+    if requirements is None:
         return roles
-    requirements = _as_native_inspectable(backend).native_requirements()
-    roles["required"].update(requirements.required_assets)
-    roles["runtime"].update(requirements.runtime_assets)
+    roles["required"].update(_as_str_list(getattr(requirements, "required_assets", [])))
+    roles["runtime"].update(_as_str_list(getattr(requirements, "runtime_assets", [])))
     return roles
 
 
-def _native_backend_doctor_lines(
+def _backend_doctor_lines(
     entry: Manifest,
     *,
     cache_dir: str | Path | None = None,
     upstream_dir: str | Path | None = None,
 ) -> tuple[list[str], str, dict[str, object] | None]:
-    if native_backend_name(entry) is None and entry.backend_name == "external_eval":
-        return (["Native backend: none declared"], "ok", {"declared": False})
-
     try:
-        manifest = resolve_native_runtime(
+        manifest = default_registry().resolve_runtime(
             entry,
-            NATIVE_DOCTOR_SPEC,
+            DOCTOR_SPEC,
             cache_dir=cache_dir,
             upstream_dir=upstream_dir,
         ).manifest
         backend = default_registry().create_backend(manifest, [])
     except (RegistryError, RuntimeError, ValueError) as exc:
         return (
-            [f"Native backend: unavailable ({exc})"],
+            [f"Backend requirements: unavailable ({exc})"],
             "warning",
             {"declared": True, "status": "unavailable", "message": str(exc)},
         )
 
-    if not hasattr(backend, "native_requirements"):
-        return (["Native backend: none declared"], "ok", {"declared": False})
+    requirements = _backend_requirements(backend)
+    report = preflight_report(backend)
+    if requirements is None or report is None:
+        return (["Backend requirements: none declared"], "ok", {"declared": False})
 
-    readiness = _as_native_inspectable(backend).native_readiness()
-    native_payload = readiness.to_dict()
-    native_payload["declared"] = True
-    requirements = readiness.requirements
-    upstream = requirements.upstream
-    next_steps = _native_next_steps(
+    backend_payload = report.to_trace_payload()
+    backend_payload["declared"] = True
+    upstream = getattr(requirements, "upstream", None)
+    next_steps = _backend_next_steps(
         entry,
-        readiness,
+        report.to_trace_payload(),
+        requirements,
         cache_dir=Path(cache_dir) if cache_dir is not None else default_cache_dir(),
     )
-    native_payload["next_steps"] = next_steps
+    backend_payload["next_steps"] = next_steps
     lines = [
-        f"Native backend: {requirements.backend} ({requirements.label})",
-        f"Native runtime mode: {requirements.runtime_mode or 'none'}",
-        f"Native runtime loader: {requirements.runtime_loader or 'none'}",
-        f"Native model adapter: {requirements.model_adapter or 'none'}",
-        f"Native readiness: {readiness.status}",
-        f"Native required assets: {csv_text(requirements.required_assets, default='none')}",
+        f"Backend target: {getattr(requirements, 'backend', 'unknown')} ({getattr(requirements, 'label', 'unknown')})",
+        f"Backend runtime mode: {getattr(requirements, 'runtime_mode', None) or 'none'}",
+        f"Backend runtime loader: {getattr(requirements, 'runtime_loader', None) or 'none'}",
+        f"Backend model adapter: {getattr(requirements, 'model_adapter', None) or 'none'}",
+        f"Backend readiness: {report.status}",
+        f"Backend required assets: {csv_text(getattr(requirements, 'required_assets', []), default='none')}",
     ]
-    if requirements.runtime_assets:
+    runtime_assets = _as_str_list(getattr(requirements, "runtime_assets", []))
+    if runtime_assets:
         lines.append(
-            f"Native runtime assets: {csv_text(requirements.runtime_assets, default='none')}"
+            f"Backend runtime assets: {csv_text(runtime_assets, default='none')}"
         )
-    if requirements.required_python_modules:
+    required_python = _as_str_list(getattr(requirements, "required_python_modules", []))
+    if required_python:
         lines.append(
-            "Native required Python modules: "
-            f"{csv_text(requirements.required_python_modules, default='none')}"
+            "Backend required Python modules: "
+            f"{csv_text(required_python, default='none')}"
         )
-    if readiness.missing_required_assets:
+    missing_required = _as_str_list(backend_payload.get("missing_required_assets"))
+    missing_runtime = _as_str_list(backend_payload.get("missing_runtime_assets"))
+    missing_python = _as_str_list(backend_payload.get("missing_python_modules"))
+    if missing_required:
         lines.append(
-            "Native missing required assets: "
-            f"{csv_text(readiness.missing_required_assets, default='none')}"
+            "Backend missing required assets: "
+            f"{csv_text(missing_required, default='none')}"
         )
-    if readiness.missing_runtime_assets:
+    if missing_runtime:
         lines.append(
-            "Native missing runtime assets: "
-            f"{csv_text(readiness.missing_runtime_assets, default='none')}"
+            "Backend missing runtime assets: "
+            f"{csv_text(missing_runtime, default='none')}"
         )
-    if readiness.missing_python_modules:
+    if missing_python:
         lines.append(
-            "Native missing Python modules: "
-            f"{csv_text(readiness.missing_python_modules, default='none')}"
+            "Backend missing Python modules: "
+            f"{csv_text(missing_python, default='none')}"
         )
-    lines.extend(
-        [
-            (
-                "Upstream repo: "
-                f"{upstream.status}"
-                f"{f' ({upstream.selected})' if upstream.selected else ''}"
-            ),
-            f"Upstream env: {upstream.env_var}",
-        ]
-    )
-    if upstream.default_dir is not None:
-        lines.append(f"Upstream default: {upstream.default_dir}")
-    if upstream.expected_commit is not None:
-        lines.append(f"Upstream expected commit: {upstream.expected_commit}")
-    if upstream.selected_commit is not None:
-        lines.append(f"Upstream selected commit: {upstream.selected_commit}")
-    if upstream.commit_status is not None:
-        lines.append(f"Upstream commit status: {upstream.commit_status}")
-    if upstream.required_paths:
-        lines.append(f"Upstream required paths: {csv_text(upstream.required_paths, default='none')}")
-    if upstream.missing_paths:
-        lines.append(f"Upstream missing paths: {csv_text(upstream.missing_paths, default='none')}")
-    if upstream.candidates:
-        lines.append(f"Upstream checked: {csv_text(upstream.candidates, default='none')}")
+    if upstream is not None:
+        selected = getattr(upstream, "selected", None)
+        lines.extend(
+            [
+                (
+                    "Upstream repo: "
+                    f"{getattr(upstream, 'status', 'unknown')}"
+                    f"{f' ({selected})' if selected else ''}"
+                ),
+                f"Upstream env: {getattr(upstream, 'env_var', 'unknown')}",
+            ]
+        )
+        if getattr(upstream, "default_dir", None) is not None:
+            lines.append(f"Upstream default: {upstream.default_dir}")
+        if getattr(upstream, "expected_commit", None) is not None:
+            lines.append(f"Upstream expected commit: {upstream.expected_commit}")
+        if getattr(upstream, "selected_commit", None) is not None:
+            lines.append(f"Upstream selected commit: {upstream.selected_commit}")
+        if getattr(upstream, "commit_status", None) is not None:
+            lines.append(f"Upstream commit status: {upstream.commit_status}")
+        required_paths = _as_str_list(getattr(upstream, "required_paths", []))
+        missing_paths = _as_str_list(getattr(upstream, "missing_paths", []))
+        candidates = _as_str_list(getattr(upstream, "candidates", []))
+        if required_paths:
+            lines.append(f"Upstream required paths: {csv_text(required_paths, default='none')}")
+        if missing_paths:
+            lines.append(f"Upstream missing paths: {csv_text(missing_paths, default='none')}")
+        if candidates:
+            lines.append(f"Upstream checked: {csv_text(candidates, default='none')}")
     if next_steps:
-        lines.append("Native next steps:")
+        lines.append("Backend next steps:")
         lines.extend(f"- {step}" for step in next_steps)
 
-    if readiness.status == "ready":
-        native_status = "ok"
-    elif readiness.status == "blocked":
-        native_status = "blocked"
+    if report.status == "ready":
+        backend_status = "ok"
+    elif report.status == "blocked":
+        backend_status = "blocked"
     else:
-        native_status = "warning"
-    return (lines, native_status, native_payload)
+        backend_status = "warning"
+    return (lines, backend_status, backend_payload)
 
 
-def _native_next_steps(
+def _backend_next_steps(
     entry: Manifest,
-    readiness: NativeReadiness,
+    payload: dict[str, object],
+    requirements: object,
     *,
     cache_dir: Path,
 ) -> list[str]:
     steps: list[str] = []
-    upstream = readiness.requirements.upstream
-    if upstream.status != "present":
-        steps.append(
-            f"Set {upstream.env_var}=<repo> or pass --upstream-dir <repo> "
-            f"with required paths: {csv_text(upstream.required_paths, default='none')}."
-        )
-    elif upstream.commit_status == "mismatch":
-        steps.append(
-            "Use the expected upstream checkout "
-            f"{upstream.expected_commit} or record the tested commit explicitly."
-        )
+    upstream = getattr(requirements, "upstream", None)
+    if upstream is not None:
+        upstream_status = getattr(upstream, "status", "unknown")
+        if upstream_status != "present":
+            steps.append(
+                f"Set {getattr(upstream, 'env_var', '<env>')}=<repo> "
+                f"or pass --upstream-dir <repo> with required paths: "
+                f"{csv_text(getattr(upstream, 'required_paths', []), default='none')}."
+            )
+        elif getattr(upstream, "commit_status", None) == "mismatch":
+            steps.append(
+                "Use the expected upstream checkout "
+                f"{getattr(upstream, 'expected_commit', None)} or record the tested commit explicitly."
+            )
 
     missing_assets = _ordered_unique(
-        [*readiness.missing_required_assets, *readiness.missing_runtime_assets]
+        [
+            *_as_str_list(payload.get("missing_required_assets")),
+            *_as_str_list(payload.get("missing_runtime_assets")),
+        ]
     )
     if missing_assets:
         asset_args = " ".join(f"--asset {name}" for name in missing_assets)
         steps.append(
-            f"Prepare missing native assets: wam prepare {entry.id} "
+            f"Prepare missing backend assets: wam prepare {entry.id} "
             f"--cache-dir {cache_dir} --download {asset_args}."
         )
 
-    if readiness.missing_python_modules:
+    missing_python = _as_str_list(payload.get("missing_python_modules"))
+    if missing_python:
         steps.append(
-            "Run inside the backend container or install native dependencies: "
-            f"{csv_text(readiness.missing_python_modules, default='none')}."
+            "Run inside the backend container or install backend dependencies: "
+            f"{csv_text(missing_python, default='none')}."
         )
 
-    if readiness.status in {"ready", "warning"}:
-        upstream_arg = f" --upstream-dir {upstream.selected}" if upstream.selected else ""
-        steps.append(
-            f"Validate the product path: wam native-smoke {entry.id} "
-            f"--cache-dir {cache_dir}{upstream_arg} --require-ready."
-        )
     return steps
 
 
-def _as_native_inspectable(backend: object) -> NativeInspectableBackend:
-    return backend  # type: ignore[return-value]
+def _backend_requirements(backend: object) -> object | None:
+    method = getattr(backend, "backend_requirements", None)
+    if not callable(method):
+        return None
+    return method()
+
+
+def _as_str_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, tuple):
+        return [str(item) for item in value]
+    return []
 
 
 def _requires_cuda(entry: Manifest) -> bool:

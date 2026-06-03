@@ -2,7 +2,8 @@ import json
 
 import pytest
 
-from wam_harness.backends.native_support.readiness import NativePreflightError
+from wam_harness.backends.native_support.runtime import native_runtime_resolver
+from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry
 from wam_harness.core.runner import RunInputRequiredError, Runner
 from wam_harness.core.types import (
@@ -125,6 +126,32 @@ class NativeRunBackend:
             optimization_profiles=self.profiles,
         )
 
+    def runtime_contract(self, *, processor: object | None = None) -> dict[str, object]:
+        return {
+            "backend": self.manifest.backend_name,
+            "processor": self.manifest.processor_name,
+            "workload": self.manifest.workload_name,
+            "mode": str(self.manifest.backend.get("mode", "run")),
+            "model_adapter": self.native_model_adapter_name(),
+            "supported_optimizations": self.manifest.supported_optimizations,
+            "optimization_profile_status": [
+                {
+                    "name": profile.name,
+                    "enabled": profile.enabled,
+                    "params": dict(profile.params),
+                    "declared_supported": profile.name
+                    in self.manifest.supported_optimizations,
+                    "scope": "simulator_eval",
+                    "target": "workload",
+                    "state": "requested",
+                }
+                for profile in self.profiles
+            ],
+        }
+
+    def action_contract_enabled(self) -> bool:
+        return True
+
     def native_model_adapter_name(self) -> str:
         return "test_native_run_adapter"
 
@@ -232,6 +259,7 @@ def test_runner_requires_input_for_native_reference_entry(tmp_path) -> None:
 
 def test_runner_maps_reference_entry_to_native_input_observation(tmp_path) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     created: list[NativeRunBackend] = []
 
     def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> NativeRunBackend:
@@ -262,7 +290,7 @@ def test_runner_maps_reference_entry_to_native_input_observation(tmp_path) -> No
     assert summary.result.action_chunk.horizon == 32
     assert created[0].closed is True
     assert created[0].manifest.backend_name == "fastwam"
-    assert created[0].manifest.backend["mode"] == "native_run"
+    assert created[0].manifest.backend["mode"] == "run"
     assert created[0].manifest.backend["config"]["upstream_dir"] == str(tmp_path / "FastWAM")
     assert created[0].manifest.backend["config"]["cache_dir"] == str(tmp_path / "cache")
     assert created[0].manifest.workload_name == "single_observation"
@@ -274,10 +302,10 @@ def test_runner_maps_reference_entry_to_native_input_observation(tmp_path) -> No
     events = read_events(summary.trace_path)
     event_names = [event["event"] for event in events]
     assert "backend_load_start" in event_names
-    assert events[0]["mode"] == "native_run"
+    assert events[0]["mode"] == "run"
     assert events[0]["synthetic_observation"] is False
-    contract = [event for event in events if event["event"] == "native_runtime_contract"][0]
-    assert contract["mode"] == "native_run"
+    contract = [event for event in events if event["event"] == "runtime_contract"][0]
+    assert contract["mode"] == "run"
     assert contract["backend"] == "fastwam"
     assert contract["processor"] == "fastwam_libero"
     assert contract["workload"] == "single_observation"
@@ -300,8 +328,8 @@ def test_runner_maps_reference_entry_to_native_input_observation(tmp_path) -> No
     assert "image_shapes" not in replan
 
 
-def test_runner_traces_native_readiness_before_native_load_failure(tmp_path) -> None:
-    with pytest.raises(NativePreflightError, match="fastwam native readiness is blocked"):
+def test_runner_traces_preflight_before_backend_load_failure(tmp_path) -> None:
+    with pytest.raises(PreflightError, match="fastwam preflight is blocked"):
         Runner().run(
             "fastwam-libero",
             trace_dir=tmp_path,
@@ -313,11 +341,11 @@ def test_runner_traces_native_readiness_before_native_load_failure(tmp_path) -> 
     assert len(trace_paths) == 1
     events = read_events(trace_paths[0])
     names = [event["event"] for event in events]
-    assert names[:4] == ["run_start", "native_runtime_contract", "native_readiness", "error"]
+    assert names[:4] == ["run_start", "runtime_contract", "preflight", "error"]
     contract = events[1]
     readiness = events[2]
     assert contract["backend"] == "fastwam"
-    assert contract["mode"] == "native_run"
+    assert contract["mode"] == "run"
     assert contract["runtime_mode"] == "in_process"
     assert contract["runtime_loader"] == "fastwam_runtime_loader"
     assert contract["model_adapter"] == "fastwam_model"
@@ -327,5 +355,5 @@ def test_runner_traces_native_readiness_before_native_load_failure(tmp_path) -> 
     assert readiness["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness["model_adapter"] == "fastwam_model"
     assert readiness["upstream"]["status"] == "missing"
-    assert events[3]["stage"] == "native_preflight"
+    assert events[3]["stage"] == "preflight"
     assert events[3]["recoverable"] is True

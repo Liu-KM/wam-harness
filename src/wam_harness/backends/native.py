@@ -17,9 +17,11 @@ from wam_harness.core._utils import (
     optional_int,
     ordered_unique,
 )
+from wam_harness.backends.native_support.contract import native_runtime_contract_payload
 from wam_harness.backends.native_support.optimizations import (
     native_optimization_status_dicts,
 )
+from wam_harness.core.preflight import PreflightReport
 from wam_harness.core.types import (
     InferenceRequest,
     InferenceResult,
@@ -313,6 +315,27 @@ class NativeBackendBase:
             required_python_modules=list(self.native_required_python_modules()),
             upstream=self.inspect_upstream_repo(),
         )
+
+    def backend_requirements(self) -> NativeRequirements:
+        return self.native_requirements()
+
+    def runtime_contract(self, *, processor: object | None = None) -> dict[str, object] | None:
+        return native_runtime_contract_payload(
+            self.manifest,
+            self.profiles,
+            processor=processor,
+            backend=self,
+        )
+
+    def preflight(self) -> PreflightReport:
+        readiness = self.native_readiness()
+        return PreflightReport(
+            status=readiness.status,
+            payload=readiness.to_dict(),
+        )
+
+    def action_contract_enabled(self) -> bool:
+        return True
 
     def native_required_upstream_paths(self) -> tuple[str, ...]:
         return tuple(self.required_upstream_paths)

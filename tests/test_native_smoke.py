@@ -105,8 +105,8 @@ def test_native_smoke_runner_fails_clearly_without_upstream_repo(tmp_path) -> No
     event_names = [event["event"] for event in events]
     assert event_names[:5] == [
         "run_start",
-        "native_runtime_contract",
-        "native_readiness",
+        "runtime_contract",
+        "preflight",
         "error",
         "run_end",
     ]
@@ -124,7 +124,7 @@ def test_native_smoke_runner_fails_clearly_without_upstream_repo(tmp_path) -> No
     assert readiness["model_adapter"] == "fastwam_model"
     assert readiness["upstream"]["status"] == "missing"
     assert "checkpoint" in readiness["missing_required_assets"]
-    assert events[3]["stage"] == "native_preflight"
+    assert events[3]["stage"] == "preflight"
     assert events[3]["recoverable"] is True
     assert events[3]["trace_path"] == str(trace_paths[0])
 
@@ -186,14 +186,14 @@ def test_native_smoke_require_ready_rejects_runtime_asset_warning(tmp_path) -> N
     events = read_events(trace_paths[0])
     contract = events[1]
     readiness = events[2]
-    assert contract["event"] == "native_runtime_contract"
-    assert readiness["event"] == "native_readiness"
+    assert contract["event"] == "runtime_contract"
+    assert readiness["event"] == "preflight"
     assert readiness["status"] == "warning"
     assert readiness["runtime_mode"] == "in_process"
     assert readiness["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness["missing_required_assets"] == []
     assert readiness["missing_runtime_assets"] == ["model_base", "tokenizer_components"]
-    assert events[3]["stage"] == "native_preflight"
+    assert events[3]["stage"] == "preflight"
 
 
 def test_native_smoke_rejects_action_contract_mismatch(tmp_path) -> None:

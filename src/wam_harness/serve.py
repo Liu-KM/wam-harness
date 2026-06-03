@@ -10,23 +10,20 @@ from pathlib import Path
 from typing import Any
 
 from wam_harness.core.action_contract import ActionContractError
+from wam_harness.core.backend_capabilities import (
+    action_contract_enabled,
+    preflight_report,
+    runtime_contract_payload,
+)
 from wam_harness.core.inference_trace import inference_result_payload
 from wam_harness.core.memory import memory_snapshot
-from wam_harness.backends.native_support.contract import native_runtime_contract_payload
-from wam_harness.backends.native_support.readiness import (
-    NativePreflightError,
-    assert_native_preflight,
-    native_readiness_payload,
-)
-from wam_harness.backends.native_support.runtime import (
-    NATIVE_SERVE_SPEC,
-    resolve_native_runtime,
-)
 from wam_harness.core.observation_io import (
     dict_or_empty as _dict_or_empty,
     observation_from_payload as _observation_from_payload,
 )
+from wam_harness.core.preflight import PreflightError, assert_preflight
 from wam_harness.core.registry import Registry, default_registry
+from wam_harness.core.runtime import SERVE_SPEC
 from wam_harness.core.tracing import TraceWriter
 from wam_harness.core.types import InferenceRequest, OptimizationProfile
 
@@ -50,9 +47,9 @@ class ServeApp:
         self.trace: TraceWriter | None = None
         self.closed = False
         self.allow_synthetic_observation = allow_synthetic_observation
-        runtime_plan = resolve_native_runtime(
+        runtime_plan = self.registry.resolve_runtime(
             self.registry.load_manifest(model_id),
-            NATIVE_SERVE_SPEC,
+            SERVE_SPEC,
             upstream_dir=upstream_dir,
             cache_dir=cache_dir,
             backend_overrides=backend_overrides or {},
@@ -73,18 +70,16 @@ class ServeApp:
         )
         try:
             self.processor = self.registry.create_processor(self.manifest)
-            contract = native_runtime_contract_payload(
-                self.manifest,
-                self.profiles,
+            contract = runtime_contract_payload(
+                self.backend,
                 processor=self.processor,
-                backend=self.backend,
             )
             if contract is not None:
-                self._trace("native_runtime_contract", **contract)
-            readiness = native_readiness_payload(self.backend)
-            if readiness is not None:
-                self._trace("native_readiness", **readiness)
-            assert_native_preflight(readiness)
+                self._trace("runtime_contract", **contract)
+            report = preflight_report(self.backend)
+            if report is not None:
+                self._trace("preflight", **report.to_trace_payload())
+            assert_preflight(report)
             load_start = time.perf_counter()
             self._trace("backend_load_start")
             self.backend.load()
@@ -107,12 +102,12 @@ class ServeApp:
         except Exception as exc:
             self._trace(
                 "error",
-                stage="native_preflight"
-                if isinstance(exc, NativePreflightError)
+                stage="preflight"
+                if isinstance(exc, PreflightError)
                 else "serve_start",
                 error_type=type(exc).__name__,
                 message=str(exc),
-                recoverable=isinstance(exc, NativePreflightError),
+                recoverable=isinstance(exc, PreflightError),
                 backend=self.manifest.backend_name,
             )
             self.close()
@@ -202,6 +197,7 @@ class ServeApp:
                     result,
                     expected_horizon=request.action_horizon,
                     wall_ms=(time.perf_counter() - start) * 1000,
+                    validate_action_contract=action_contract_enabled(self.backend),
                 ),
             )
             return result.to_dict()

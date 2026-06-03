@@ -62,9 +62,9 @@ def test_inference_result_payload_preserves_trace_fields() -> None:
     assert payload["warnings"] == ["smoke warning"]
 
 
-def test_inference_result_payload_validates_native_contract() -> None:
+def test_inference_result_payload_validates_action_contract_when_enabled() -> None:
     data = load_builtin_manifest("fastwam-libero").to_dict()
-    data["backend"] = {"name": "fastwam", "mode": "native_run", "config": {}}
+    data["backend"] = {"name": "fastwam", "mode": "run", "config": {}}
     manifest = manifest_from_dict(data)
     result = InferenceResult(action_chunk=ActionChunk(actions=[[0.0] * 7]))
 
@@ -74,4 +74,5 @@ def test_inference_result_payload_validates_native_contract() -> None:
             result,
             expected_horizon=2,
             wall_ms=1.0,
+            validate_action_contract=True,
         )
