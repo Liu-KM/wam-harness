@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from wam_harness.core.native_optimizations import native_optimization_status_dicts
+from wam_harness.backends.native_support.optimizations import (
+    native_optimization_status_dicts,
+)
 from wam_harness.core.types import Manifest, OptimizationProfile
 
 

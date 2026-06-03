@@ -5,7 +5,8 @@ from pathlib import Path
 import pytest
 
 from wam_harness.core.assets import parse_hf_uri
-from wam_harness.core.model_entry import prepare_model_entry, render_prepare
+from wam_harness.cli_render import render_prepare
+from wam_harness.core.model_entry import prepare_model_entry
 
 
 class RecordingDownloader:

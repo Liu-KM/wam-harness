@@ -1,7 +1,7 @@
 import pytest
 
 from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.core.native_runtime import (
+from wam_harness.backends.native_support.runtime import (
     NATIVE_RUN_SPEC,
     NATIVE_SERVE_SPEC,
     NATIVE_SMOKE_SPEC,

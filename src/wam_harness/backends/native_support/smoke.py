@@ -11,13 +11,13 @@ from wam_harness.core.action_contract import (
 )
 from wam_harness.core.action_summary import action_chunk_summary
 from wam_harness.core.memory import memory_snapshot
-from wam_harness.core.native_contract import native_runtime_contract_payload
-from wam_harness.core.native_readiness import (
+from wam_harness.backends.native_support.contract import native_runtime_contract_payload
+from wam_harness.backends.native_support.readiness import (
     NativePreflightError,
     assert_native_preflight,
     native_readiness_payload,
 )
-from wam_harness.core.native_runtime import (
+from wam_harness.backends.native_support.runtime import (
     NATIVE_SMOKE_SPEC,
     NativeRuntimeError,
     resolve_native_runtime,

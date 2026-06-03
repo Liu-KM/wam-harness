@@ -5,10 +5,17 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.core.types import InferenceResult, Manifest, Observation, OptimizationProfile
+from wam_harness.core.types import (
+    InferenceRequest,
+    InferenceResult,
+    Manifest,
+    Observation,
+    OptimizationProfile,
+    RuntimeInfo,
+)
 
 
-class RegistryError(KeyError):
+class RegistryError(LookupError):
     """Raised when a registry key is unknown or incompatible."""
 
 
@@ -19,9 +26,9 @@ class Backend(Protocol):
 
     def reset(self) -> None: ...
 
-    def infer(self, request: object) -> object: ...
+    def infer(self, request: InferenceRequest) -> InferenceResult: ...
 
-    def runtime_info(self) -> object: ...
+    def runtime_info(self) -> RuntimeInfo: ...
 
     def close(self) -> None: ...
 
@@ -119,30 +126,18 @@ def default_registry() -> Registry:
     from wam_harness.workloads.open_loop import OpenLoopWorkload
 
     registry = Registry()
-    registry.register_backend("fake", lambda manifest, profiles: FakeBackend(manifest, profiles))
-    registry.register_backend(
-        "cosmos_policy", lambda manifest, profiles: CosmosPolicyBackend(manifest, profiles)
-    )
-    registry.register_backend(
-        "dreamzero", lambda manifest, profiles: DreamZeroBackend(manifest, profiles)
-    )
-    registry.register_backend(
-        "fastwam", lambda manifest, profiles: FastWAMBackend(manifest, profiles)
-    )
-    registry.register_processor(
-        "passthrough", lambda manifest: PassthroughProcessor.from_manifest(manifest)
-    )
-    registry.register_processor(
-        "fastwam_libero", lambda manifest: FastWAMLiberoProcessor.from_manifest(manifest)
-    )
+    registry.register_backend("fake", FakeBackend)
+    registry.register_backend("cosmos_policy", CosmosPolicyBackend)
+    registry.register_backend("dreamzero", DreamZeroBackend)
+    registry.register_backend("fastwam", FastWAMBackend)
+    registry.register_processor("passthrough", PassthroughProcessor.from_manifest)
+    registry.register_processor("fastwam_libero", FastWAMLiberoProcessor.from_manifest)
     registry.register_processor(
         "cosmos_policy_libero",
-        lambda manifest: CosmosPolicyLiberoProcessor.from_manifest(manifest),
+        CosmosPolicyLiberoProcessor.from_manifest,
     )
-    registry.register_processor(
-        "dreamzero_droid", lambda manifest: DreamZeroDroidProcessor.from_manifest(manifest)
-    )
-    registry.register_workload("open_loop", lambda manifest: OpenLoopWorkload.from_manifest(manifest))
+    registry.register_processor("dreamzero_droid", DreamZeroDroidProcessor.from_manifest)
+    registry.register_workload("open_loop", OpenLoopWorkload.from_manifest)
     registry.register_optimization("fake_cache", {"cache_scope": "replan"})
     registry.register_optimization("action_chunk_scheduling", {})
     registry.register_optimization("dit_cache", {})

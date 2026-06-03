@@ -11,13 +11,18 @@ from wam_harness.core.eval_runner import EvalRunner, EvalRunnerError
 from wam_harness.core.model_entry import (
     doctor_model_entry,
     prepare_model_entry,
+)
+from wam_harness.cli_render import (
     render_doctor,
     render_model_info,
     render_model_list,
     render_prepare,
 )
-from wam_harness.core.native_readiness import NativePreflightError
-from wam_harness.core.native_smoke import NativeSmokeRunner, NativeSmokeRunnerError
+from wam_harness.backends.native_support.readiness import NativePreflightError
+from wam_harness.backends.native_support.smoke import (
+    NativeSmokeRunner,
+    NativeSmokeRunnerError,
+)
 from wam_harness.core.observation_io import (
     dict_or_empty,
     load_json_payload,
@@ -207,13 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.json:
             print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
         else:
-            print(
-                render_doctor(
-                    args.model_id,
-                    cache_dir=args.cache_dir,
-                    upstream_dir=args.upstream_dir,
-                )
-            )
+            print(render_doctor(summary))
         return 0 if not args.strict or summary.status == "ok" else 1
 
     if args.command == "prepare":

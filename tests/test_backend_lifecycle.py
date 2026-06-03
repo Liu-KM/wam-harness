@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from wam_harness.core.native_smoke import NativeSmokeRunner
-from wam_harness.core.registry import Registry
+from wam_harness.backends.native_support.smoke import NativeSmokeRunner
+from wam_harness.core.registry import Registry, RegistryError
 from wam_harness.core.runner import Runner
 from wam_harness.core.types import (
     ActionChunk,
@@ -312,7 +312,7 @@ def test_serve_app_closes_backend_when_processor_creation_fails(tmp_path) -> Non
     registry.register_backend("fake", factory)
     registry.processors.clear()
 
-    with pytest.raises(KeyError, match="unknown processor"):
+    with pytest.raises(RegistryError, match="unknown processor"):
         ServeApp("fake-open-loop", registry=registry, trace_dir=tmp_path)
 
     assert backend.closed is True

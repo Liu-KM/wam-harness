@@ -9,19 +9,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from wam_harness.core.action_contract import (
-    ActionContractError,
-    maybe_validate_native_action_contract,
-)
-from wam_harness.core.action_summary import action_chunk_summary
+from wam_harness.core.action_contract import ActionContractError
+from wam_harness.core.inference_trace import inference_result_payload
 from wam_harness.core.memory import memory_snapshot
-from wam_harness.core.native_contract import native_runtime_contract_payload
-from wam_harness.core.native_readiness import (
+from wam_harness.backends.native_support.contract import native_runtime_contract_payload
+from wam_harness.backends.native_support.readiness import (
     NativePreflightError,
     assert_native_preflight,
     native_readiness_payload,
 )
-from wam_harness.core.native_runtime import NATIVE_SERVE_SPEC, resolve_native_runtime
+from wam_harness.backends.native_support.runtime import (
+    NATIVE_SERVE_SPEC,
+    resolve_native_runtime,
+)
 from wam_harness.core.observation_io import (
     dict_or_empty as _dict_or_empty,
     observation_from_payload as _observation_from_payload,
@@ -190,11 +190,6 @@ class ServeApp:
             if request.reset:
                 self.backend.reset()
             result = self.backend.infer(request)
-            action_contract = maybe_validate_native_action_contract(
-                self.manifest,
-                result.action_chunk,
-                expected_horizon=request.action_horizon,
-            )
             self._trace(
                 "serve_request_end",
                 request_id=request_id,
@@ -202,25 +197,12 @@ class ServeApp:
                 action_horizon=request.action_horizon,
                 replan_steps=request.replan_steps,
                 synthetic_observation=synthetic_observation,
-                action_chunk_len=result.action_chunk.horizon,
-                action_dim=result.action_chunk.action_dim,
-                action_chunk_shape=[
-                    result.action_chunk.horizon,
-                    result.action_chunk.action_dim,
-                ],
-                action_summary=action_chunk_summary(result.action_chunk),
-                future_frames=result.future_frames,
-                value=result.value,
-                timing={
-                    **result.timing,
-                    "wall_ms": (time.perf_counter() - start) * 1000,
-                },
-                memory={**memory_snapshot(), **result.memory},
-                backend_metadata=result.backend_metadata,
-                action_contract=(
-                    action_contract.to_dict() if action_contract is not None else None
+                **inference_result_payload(
+                    self.manifest,
+                    result,
+                    expected_horizon=request.action_horizon,
+                    wall_ms=(time.perf_counter() - start) * 1000,
                 ),
-                warnings=result.warnings,
             )
             return result.to_dict()
         except Exception as exc:

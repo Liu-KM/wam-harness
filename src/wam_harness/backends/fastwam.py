@@ -14,6 +14,10 @@ from wam_harness.backends.native import (
     NativeModelCall,
     NativeRuntimeLoader,
 )
+from wam_harness.core._utils import (
+    optional_float as _optional_float,
+    optional_int as _optional_int,
+)
 from wam_harness.core.types import (
     InferenceRequest,
     Manifest,
@@ -538,15 +542,3 @@ def _future_video_present(raw_output: object) -> bool:
         return False
     video = raw_output.get("video")
     return isinstance(video, list) and len(video) > 0
-
-
-def _optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    return int(value)
-
-
-def _optional_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    return float(value)

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from wam_harness.core.native_readiness import NativePreflightError
+from wam_harness.backends.native_support.readiness import NativePreflightError
 from wam_harness.core.registry import Registry
 from wam_harness.core.types import (
     ActionChunk,

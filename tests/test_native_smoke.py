@@ -6,8 +6,8 @@ from wam_harness.backends.fastwam import FastWAMBackend
 from wam_harness.cli import build_parser, main
 from wam_harness.core.action_contract import ActionContractError
 from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.core.native_readiness import NativePreflightError
-from wam_harness.core.native_smoke import (
+from wam_harness.backends.native_support.readiness import NativePreflightError
+from wam_harness.backends.native_support.smoke import (
     NativeSmokeRunner,
     NativeSmokeRunnerError,
     native_smoke_manifest,

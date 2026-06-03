@@ -106,23 +106,31 @@ architectures. See `docs/optimization_integration.md`.
 - Model reimplementation.
 - Replacing Hugging Face Hub or upstream checkpoint distribution.
 
-## Planned Layout
+## Current Layout
 
 ```text
 src/wam_harness/
-  core/       Stable harness abstractions.
-  backends/   Model-specific backend layer.
-  processors/ Backend-specific input/output conversion.
-  envs/       Open-loop, simulator, and future robot environment integrations.
-  deploy/     Server-client protocol and remote policy utilities.
-  cli/        Command-line entry points.
+  cli.py       Command-line entry point and command dispatch.
+  serve.py     Local HTTP policy server.
+  core/        Stable harness abstractions, runners, traces, and model entries.
+  backends/    Model-specific backend adapters.
+  processors/  Backend-specific input/output conversion.
+  workloads/   Open-loop and single-observation workload drivers.
+  manifests/   Curated model-entry YAML files.
+  compat/      Small compatibility shims for upstream evaluator entrypoints.
 
 configs/      Run, model, and optimization configuration examples.
+containers/   Dockerfile-compatible backend runtime recipes.
 examples/     Minimal inputs for smoke tests.
 tests/        Unit and integration tests.
 docs/         Design notes and schemas.
 scripts/      Repository maintenance scripts.
 ```
+
+Empty future packages are intentionally not kept in the source tree. CLI and
+server code can move into `cli/` or `deploy/` packages when their surface area
+is large enough to justify the split; until then, the README describes the
+working code rather than a future architecture sketch.
 
 The first runnable vertical slices are:
 

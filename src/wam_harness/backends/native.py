@@ -11,7 +11,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Protocol
 
-from wam_harness.core.native_optimizations import native_optimization_status_dicts
+from wam_harness.core._utils import (
+    default_cache_dir,
+    optional_float,
+    optional_int,
+    ordered_unique,
+)
+from wam_harness.backends.native_support.optimizations import (
+    native_optimization_status_dicts,
+)
 from wam_harness.core.types import (
     InferenceRequest,
     InferenceResult,
@@ -502,7 +510,7 @@ class NativeBackendBase:
         requirements: NativeRequirements | None = None,
     ) -> list[NativeAssetStatus]:
         resolved = requirements or self.native_requirements()
-        names = _ordered_unique(
+        names = ordered_unique(
             [*resolved.required_assets, *resolved.runtime_assets]
         )
         required = set(resolved.required_assets)
@@ -760,7 +768,7 @@ class NativeBackendBase:
         configured = self.config.get("cache_dir")
         if configured:
             return Path(str(configured)).expanduser()
-        return Path(os.environ.get("WAM_CACHE_DIR", str(Path.home() / ".cache" / "wam")))
+        return default_cache_dir()
 
     def require_loaded(self) -> None:
         if not self.loaded:
@@ -778,29 +786,14 @@ class NativeBackendBase:
         self.loaded = False
 
     def optional_int(self, value: Any) -> int | None:
-        if value is None:
-            return None
-        return int(value)
+        return optional_int(value)
 
     def optional_float(self, value: Any) -> float | None:
-        if value is None:
-            return None
-        return float(value)
+        return optional_float(value)
 
     def no_grad(self) -> object:
         torch = importlib.import_module("torch")
         return torch.no_grad()
-
-
-def _ordered_unique(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        ordered.append(value)
-    return ordered
 
 
 def _commit_status(expected: str | None, selected: str | None) -> str | None:

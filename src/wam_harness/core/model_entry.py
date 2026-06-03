@@ -7,20 +7,26 @@ from pathlib import Path
 from typing import Protocol
 
 from wam_harness.backends.native import NativeReadiness, NativeRequirements
+from wam_harness.core._utils import (
+    csv_text,
+    default_cache_dir,
+    optional_int as _optional_int,
+    ordered_unique as _ordered_unique,
+)
 from wam_harness.core.assets import AssetDownloader, AssetError, HuggingFaceAssetDownloader
 from wam_harness.core.manifest import list_builtin_manifest_ids, load_builtin_manifest
-from wam_harness.core.native_runtime import (
+from wam_harness.backends.native_support.runtime import (
     NATIVE_DOCTOR_SPEC,
     NATIVE_PREPARE_SPEC,
     native_backend_name,
     resolve_native_runtime,
 )
+from wam_harness.core.model_entry_labels import (
+    model_deployment_label,
+    model_runtime_label,
+)
 from wam_harness.core.registry import RegistryError, default_registry
 from wam_harness.core.types import Manifest
-
-
-def default_cache_dir() -> Path:
-    return Path(os.environ.get("WAM_CACHE_DIR", str(Path.home() / ".cache" / "wam")))
 
 
 @dataclass(frozen=True)
@@ -97,75 +103,6 @@ def load_model_entries() -> list[Manifest]:
     return [load_builtin_manifest(model_id) for model_id in list_builtin_manifest_ids()]
 
 
-def render_model_list() -> str:
-    entries = load_model_entries()
-    id_width = max([len("MODEL ID"), *(len(entry.id) for entry in entries)])
-    task_width = max([len("TASK"), *(len(_task_label(entry)) for entry in entries)])
-    lines = [f"{'MODEL ID':<{id_width}}  {'TASK':<{task_width}}  RUNTIME"]
-    for entry in entries:
-        lines.append(f"{entry.id:<{id_width}}  {_task_label(entry):<{task_width}}  {_runtime_label(entry)}")
-    return "\n".join(lines)
-
-
-def render_model_info(model_id: str) -> str:
-    entry = load_builtin_manifest(model_id)
-    source = entry.source_repo or "unknown"
-    lines = [
-        f"Model: {entry.id}",
-        f"Name: {entry.display_name}",
-        f"Task: {_task_label(entry)}",
-        f"Source: {source}",
-        f"Inputs: {_input_label(entry)}",
-        f"Outputs: {_output_label(entry)}",
-        f"Runtime: {_runtime_label(entry)}",
-        f"Deployment: {_deployment_label(entry)}",
-        f"Assets: {_assets_label(entry)}",
-        f"Supported opts: {_supported_opts_label(entry)}",
-    ]
-    if entry.known_gaps:
-        lines.append("Known gaps:")
-        lines.extend(f"- {gap}" for gap in entry.known_gaps)
-    return "\n".join(lines)
-
-
-def render_doctor(
-    model_id: str | None = None,
-    cache_dir: str | Path | None = None,
-    upstream_dir: str | Path | None = None,
-) -> str:
-    summary = doctor_model_entry(
-        model_id=model_id,
-        cache_dir=cache_dir,
-        upstream_dir=upstream_dir,
-    )
-    lines = [
-        "WAM doctor",
-        f"Cache directory: {summary.cache_dir} ({summary.cache_status})",
-        f"Runtime setup: {summary.runtime_setup}",
-    ]
-
-    if summary.model_id is not None:
-        lines.append(f"Model: {summary.model_id}")
-        if summary.runtime is not None:
-            lines.append(f"Runtime: {summary.runtime}")
-        if summary.deployment is not None:
-            lines.append(f"Deployment: {summary.deployment}")
-        if summary.gpu is not None:
-            lines.append(f"GPU: {summary.gpu}")
-
-        if summary.assets:
-            lines.append("Assets:")
-            for asset in summary.assets:
-                lines.append(f"- {asset.name}: {asset.status} ({asset.expected_path})")
-        else:
-            lines.append("Assets: none declared")
-
-        lines.extend(summary.native_lines)
-
-    lines.append(f"Status: {summary.status}")
-    return "\n".join(lines)
-
-
 def doctor_model_entry(
     model_id: str | None = None,
     cache_dir: str | Path | None = None,
@@ -210,8 +147,8 @@ def doctor_model_entry(
         runtime_setup=runtime_setup,
         status=status,
         model_id=entry.id,
-        runtime=_runtime_label(entry),
-        deployment=_deployment_label(entry),
+        runtime=model_runtime_label(entry),
+        deployment=model_deployment_label(entry),
         gpu=gpu_status,
         assets=assets,
         native_lines=native_lines,
@@ -259,36 +196,6 @@ def prepare_model_entry(
         download=download,
         selected_assets=selected,
     )
-
-
-def render_prepare(summary: PrepareSummary) -> str:
-    lines = [
-        f"Model: {summary.model_id}",
-        f"Cache directory: {summary.cache_dir}",
-        "Runtime setup: not modified",
-    ]
-    if summary.selected_assets is not None:
-        lines.append(f"Selected assets: {_csv(summary.selected_assets, default='none')}")
-    if summary.download:
-        lines.append("Download: enabled")
-    if summary.assets:
-        lines.append("Assets:")
-        for asset in summary.assets:
-            line = f"- {asset.name}: {asset.status} ({asset.expected_path})"
-            roles = _asset_role_labels(asset)
-            if roles:
-                line += f" [{','.join(roles)}]"
-            if asset.size_bytes is not None:
-                line += f" [{_format_size(asset.size_bytes)}]"
-            if asset.downloaded:
-                line += " [downloaded]"
-            if asset.message:
-                line += f" - {asset.message}"
-            lines.append(line)
-    else:
-        lines.append("Assets: none declared")
-    lines.append(f"Status: {summary.status}")
-    return "\n".join(lines)
 
 
 def asset_statuses(
@@ -413,92 +320,6 @@ def _native_asset_roles(entry: Manifest, cache_dir: Path) -> dict[str, set[str]]
     return roles
 
 
-def _asset_role_labels(asset: AssetStatus) -> list[str]:
-    labels = []
-    if asset.required:
-        labels.append("required")
-    if asset.runtime:
-        labels.append("runtime")
-    return labels
-
-
-def _task_label(entry: Manifest) -> str:
-    eval_config = entry.eval
-    if eval_config:
-        simulator = eval_config.get("simulator") or entry.workload.get("config", {}).get("simulator")
-        suite = eval_config.get("suite") or entry.workload.get("config", {}).get("suite")
-        if simulator and suite:
-            return f"{simulator} {suite}"
-        if simulator:
-            return str(simulator)
-    return str(entry.workload_name)
-
-
-def _runtime_label(entry: Manifest) -> str:
-    device = str(entry.defaults.get("device", "unknown"))
-    mode = str(entry.backend.get("mode", entry.backend_name))
-    if device.startswith("cuda"):
-        return f"GPU container recommended ({mode})"
-    return f"CPU ok ({mode})"
-
-
-def _deployment_label(entry: Manifest) -> str:
-    deployment = entry.deployment
-    if not deployment:
-        return "native"
-    reference = str(deployment.get("reference_path", "none"))
-    product = str(deployment.get("product_path", "unknown"))
-    native = deployment.get("native_backend")
-    stage = str(deployment.get("native_stage", "unknown"))
-    verified = bool(deployment.get("native_verified", False))
-    parity = bool(deployment.get("parity_verified", False))
-    parts = [f"product={product}", f"reference={reference}"]
-    if native is not None:
-        parts.append(f"native={native} ({stage})")
-    parts.append(f"native_verified={str(verified).lower()}")
-    parts.append(f"parity_verified={str(parity).lower()}")
-    next_gate = deployment.get("next_gate")
-    if next_gate is not None:
-        parts.append(f"next={next_gate}")
-    return "; ".join(parts)
-
-
-def _input_label(entry: Manifest) -> str:
-    observation = entry.processor.get("observation", {})
-    if not isinstance(observation, dict):
-        return "unknown"
-    images = _csv(observation.get("image_views"), default="none")
-    state = str(observation.get("state", "none"))
-    prompt = str(observation.get("prompt", "none"))
-    return f"images={images}; state={state}; prompt={prompt}"
-
-
-def _output_label(entry: Manifest) -> str:
-    action = entry.processor.get("action", {})
-    if not isinstance(action, dict):
-        return "action chunks"
-    horizon = action.get("horizon")
-    dim = action.get("dim")
-    parts = ["action chunks"]
-    if horizon is not None:
-        parts.append(f"horizon={horizon}")
-    if dim is not None:
-        parts.append(f"dim={dim}")
-    return "; ".join(parts)
-
-
-def _assets_label(entry: Manifest) -> str:
-    if not entry.assets:
-        return "none declared"
-    return ", ".join(str(name) for name in entry.assets)
-
-
-def _supported_opts_label(entry: Manifest) -> str:
-    if not entry.supported_optimizations:
-        return "none"
-    return ", ".join(entry.supported_optimizations)
-
-
 def _native_backend_doctor_lines(
     entry: Manifest,
     *,
@@ -543,31 +364,31 @@ def _native_backend_doctor_lines(
         f"Native runtime loader: {requirements.runtime_loader or 'none'}",
         f"Native model adapter: {requirements.model_adapter or 'none'}",
         f"Native readiness: {readiness.status}",
-        f"Native required assets: {_csv(requirements.required_assets, default='none')}",
+        f"Native required assets: {csv_text(requirements.required_assets, default='none')}",
     ]
     if requirements.runtime_assets:
         lines.append(
-            f"Native runtime assets: {_csv(requirements.runtime_assets, default='none')}"
+            f"Native runtime assets: {csv_text(requirements.runtime_assets, default='none')}"
         )
     if requirements.required_python_modules:
         lines.append(
             "Native required Python modules: "
-            f"{_csv(requirements.required_python_modules, default='none')}"
+            f"{csv_text(requirements.required_python_modules, default='none')}"
         )
     if readiness.missing_required_assets:
         lines.append(
             "Native missing required assets: "
-            f"{_csv(readiness.missing_required_assets, default='none')}"
+            f"{csv_text(readiness.missing_required_assets, default='none')}"
         )
     if readiness.missing_runtime_assets:
         lines.append(
             "Native missing runtime assets: "
-            f"{_csv(readiness.missing_runtime_assets, default='none')}"
+            f"{csv_text(readiness.missing_runtime_assets, default='none')}"
         )
     if readiness.missing_python_modules:
         lines.append(
             "Native missing Python modules: "
-            f"{_csv(readiness.missing_python_modules, default='none')}"
+            f"{csv_text(readiness.missing_python_modules, default='none')}"
         )
     lines.extend(
         [
@@ -588,11 +409,11 @@ def _native_backend_doctor_lines(
     if upstream.commit_status is not None:
         lines.append(f"Upstream commit status: {upstream.commit_status}")
     if upstream.required_paths:
-        lines.append(f"Upstream required paths: {_csv(upstream.required_paths, default='none')}")
+        lines.append(f"Upstream required paths: {csv_text(upstream.required_paths, default='none')}")
     if upstream.missing_paths:
-        lines.append(f"Upstream missing paths: {_csv(upstream.missing_paths, default='none')}")
+        lines.append(f"Upstream missing paths: {csv_text(upstream.missing_paths, default='none')}")
     if upstream.candidates:
-        lines.append(f"Upstream checked: {_csv(upstream.candidates, default='none')}")
+        lines.append(f"Upstream checked: {csv_text(upstream.candidates, default='none')}")
     if next_steps:
         lines.append("Native next steps:")
         lines.extend(f"- {step}" for step in next_steps)
@@ -617,7 +438,7 @@ def _native_next_steps(
     if upstream.status != "present":
         steps.append(
             f"Set {upstream.env_var}=<repo> or pass --upstream-dir <repo> "
-            f"with required paths: {_csv(upstream.required_paths, default='none')}."
+            f"with required paths: {csv_text(upstream.required_paths, default='none')}."
         )
     elif upstream.commit_status == "mismatch":
         steps.append(
@@ -638,7 +459,7 @@ def _native_next_steps(
     if readiness.missing_python_modules:
         steps.append(
             "Run inside the backend container or install native dependencies: "
-            f"{_csv(readiness.missing_python_modules, default='none')}."
+            f"{csv_text(readiness.missing_python_modules, default='none')}."
         )
 
     if readiness.status in {"ready", "warning"}:
@@ -650,46 +471,8 @@ def _native_next_steps(
     return steps
 
 
-def _ordered_unique(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        ordered.append(value)
-    return ordered
-
-
 def _as_native_inspectable(backend: object) -> NativeInspectableBackend:
     return backend  # type: ignore[return-value]
-
-
-def _csv(value: object, default: str) -> str:
-    if isinstance(value, list):
-        return ",".join(str(item) for item in value)
-    if value is None:
-        return default
-    return str(value)
-
-
-def _optional_int(value: object) -> int | None:
-    if value is None:
-        return None
-    return int(value)
-
-
-def _format_size(size_bytes: int) -> str:
-    units = ["B", "KiB", "MiB", "GiB", "TiB"]
-    size = float(size_bytes)
-    unit = units[0]
-    for unit in units:
-        if size < 1024 or unit == units[-1]:
-            break
-        size /= 1024
-    if unit == "B":
-        return f"{int(size)} {unit}"
-    return f"{size:.1f} {unit}"
 
 
 def _requires_cuda(entry: Manifest) -> bool:

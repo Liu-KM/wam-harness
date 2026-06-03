@@ -5,19 +5,19 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from wam_harness.core.action_contract import (
-    ActionContractError,
-    maybe_validate_native_action_contract,
+from wam_harness.core.action_contract import ActionContractError
+from wam_harness.core.inference_trace import (
+    inference_result_payload,
+    observation_summary,
 )
-from wam_harness.core.action_summary import action_chunk_summary
 from wam_harness.core.memory import memory_snapshot
-from wam_harness.core.native_contract import native_runtime_contract_payload
-from wam_harness.core.native_readiness import (
+from wam_harness.backends.native_support.contract import native_runtime_contract_payload
+from wam_harness.backends.native_support.readiness import (
     NativePreflightError,
     assert_native_preflight,
     native_readiness_payload,
 )
-from wam_harness.core.native_runtime import (
+from wam_harness.backends.native_support.runtime import (
     NATIVE_INPUT_RUN_SPEC,
     NATIVE_RUN_SPEC,
     native_backend_name,
@@ -26,7 +26,6 @@ from wam_harness.core.native_runtime import (
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.tracing import TraceWriter
 from wam_harness.core.types import (
-    ActionChunk,
     InferenceRequest,
     InferenceResult,
     Manifest,
@@ -180,7 +179,7 @@ class Runner:
                                 replan_id=replan_id,
                                 action_horizon=effective_action_horizon,
                                 replan_steps=effective_replan_steps,
-                                observation_summary=_observation_summary(observation),
+                                observation_summary=observation_summary(observation),
                                 history_len=len(observation.history),
                             )
                             request = InferenceRequest(
@@ -200,10 +199,11 @@ class Runner:
                             result = backend.infer(request)
                             last_result = result
                             infer_wall_ms = (time.perf_counter() - infer_start) * 1000
-                            action_contract = maybe_validate_native_action_contract(
+                            result_payload = inference_result_payload(
                                 manifest,
-                                result.action_chunk,
+                                result,
                                 expected_horizon=effective_action_horizon,
+                                wall_ms=infer_wall_ms,
                             )
                             pending_actions = list(result.action_chunk.actions)
                             workload.mark_replan()
@@ -215,24 +215,7 @@ class Runner:
                                 replan_id=replan_id,
                                 action_horizon=effective_action_horizon,
                                 replan_steps=effective_replan_steps,
-                                action_chunk_len=result.action_chunk.horizon,
-                                action_dim=result.action_chunk.action_dim,
-                                action_chunk_shape=[
-                                    result.action_chunk.horizon,
-                                    result.action_chunk.action_dim,
-                                ],
-                                action_summary=action_chunk_summary(result.action_chunk),
-                                future_frames=result.future_frames,
-                                value=result.value,
-                                timing={**result.timing, "wall_ms": infer_wall_ms},
-                                memory={**memory_snapshot(), **result.memory},
-                                backend_metadata=result.backend_metadata,
-                                action_contract=(
-                                    action_contract.to_dict()
-                                    if action_contract is not None
-                                    else None
-                                ),
-                                warnings=result.warnings,
+                                **result_payload,
                             )
 
                         action = pending_actions.pop(0) if pending_actions else []
@@ -312,24 +295,6 @@ class Runner:
             processor = self.registry.create_processor(manifest)
             return ProcessorSmokeWorkload.from_processor(manifest, processor), processor
         return self.registry.create_workload(manifest), None
-
-
-def action_summary(chunk: ActionChunk) -> dict[str, object]:
-    return action_chunk_summary(chunk)
-
-
-def _observation_summary(observation: object) -> dict[str, object]:
-    images = getattr(observation, "images", {})
-    state = getattr(observation, "state", {})
-    history = getattr(observation, "history", [])
-    session = getattr(observation, "session", {})
-    return {
-        "image_keys": sorted(images.keys()) if isinstance(images, dict) else [],
-        "state_keys": sorted(state.keys()) if isinstance(state, dict) else [],
-        "prompt": str(getattr(observation, "prompt", "")),
-        "history_len": len(history) if isinstance(history, list) else 0,
-        "session_keys": sorted(session.keys()) if isinstance(session, dict) else [],
-    }
 
 
 def _default_horizon(manifest: Manifest) -> int:
