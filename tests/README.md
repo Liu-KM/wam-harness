@@ -1,4 +1,4 @@
 # Tests
 
-This directory will contain unit and integration tests once implementation code
-is added.
+This directory contains unit and CLI smoke tests for the Phase A fake deployment
+spine.

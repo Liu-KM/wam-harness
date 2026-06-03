@@ -1,78 +1,107 @@
-# WAM Systems Experiment Contract
+# WAM Deployment Contract
 
-## Purpose
+WAM Harness is an Ollama-like local deployment platform for world-action models.
+The core contract exists to make `wam prepare`, `wam run`, `wam serve`, and
+runtime optimization profiles work across messy upstream WAM/VLA repositories.
 
-WAM Harness is an inference systems harness for testing whether ideas from LLM
-inference systems transfer to world-action model workloads.
+The project is product-first on this branch. Observability remains part of the
+runtime because users should be able to inspect what an optimization toggle did.
 
-The project is not a generic WAM serving framework. Its main job is to make a
-systems idea testable:
+## Public Surface
 
-- What pressure did the idea solve in LLM inference?
-- Does the same pressure exist in WAM inference?
-- Does the method still apply under WAM workload structure?
-- What measurements and correctness checks decide whether it worked?
+The intended user path is small:
 
-This document defines the one public harness contract. Backend-specific tensor
-layouts, preprocessing details, transport protocols, and cache mechanics must
-stay outside the core contract.
+```bash
+wam list
+wam info fastwam-libero
+wam doctor fastwam-libero
+wam prepare fastwam-libero
+wam run fastwam-libero --input obs.json --output action.json
+wam run fastwam-libero --input obs.json --opt vla_cache
+wam serve fastwam-libero --port 8000
+wam compare runs/baseline runs/variant
+```
+
+`wam list` and `wam info <model-id>` expose the curated model library without
+requiring users to read YAML files.
+
+`wam doctor [model-id]` checks whether the current machine or prepared runtime
+can run the core package and, optionally, a specific model entry.
+
+`wam prepare <model-id>` prepares model assets for use: it creates cache
+directories, verifies declared assets, and reports remaining manual
+requirements. It does not install environments, containers, CUDA, or cluster
+launchers.
+
+`wam run <model-id> --input obs.json` runs one explicit observation through the
+native product path. Internally it resolves the model spec, locates prepared
+assets, creates or connects to a backend and processor, emits trace metadata,
+and writes outputs. For real WAM entries, `run` must not silently create a
+synthetic observation.
+
+`wam eval <model-id>` is reserved for curated evaluations once a native workload
+is validated. Official simulator scripts are reference evaluators and require
+explicit `wam eval <model-id> --reference`.
+
+`wam serve <model-id>` keeps a backend resident and exposes an
+observation-to-action policy endpoint for open-loop, simulator, or remote-client
+usage.
+
+The serve endpoint accepts a JSON object with an `observation` using the core
+observation contract plus optional `action_horizon`, `replan_steps`, `reset`,
+and `runtime_options`. Empty requests are reserved for smoke checks and use the
+registered processor's synthetic smoke observation.
+
+Serve is traced as a resident run. `/health` returns the run id and trace path;
+each `/infer` request records request start/end timing and action shape.
+
+`wam compare` is a product benchmark helper. It compares two recorded runs and
+reports latency, memory, output drift, and warnings. It is optional for normal
+one-command usage.
+
+The first comparison gate is conservative: compare latency samples and action
+chunk shapes from traces. A run is not reported as faster if the output shape
+gate fails or is unavailable.
 
 ## Non-Goals
 
 - Training support.
-- Production serving.
-- A full model zoo.
+- Real robot safety or hardware orchestration.
+- Exhaustive model zoo coverage.
+- Replacing Hugging Face Hub or upstream checkpoint distribution.
+- A universal simulator or robotics environment interface.
 - A replacement tensor runtime or CUDA allocator.
-- A universal robotics environment interface.
-- Optimization switches without baseline, variant, and measurement evidence.
+- Hidden optimization switches that cannot be disabled or inspected.
 
-## Workload Units
+## Model Entry Contract
 
-The harness should describe every run using these units.
+Model entries are the public model-default layer. Internally, a model entry is
+stored as a YAML model spec; the code may still call it a manifest. A model
+entry binds:
 
-`run`
+- model id and display name.
+- upstream source repository.
+- checkpoint, normalizer, dataset-stat, and other assets.
+- backend and processor registry keys.
+- default request shape and dtype/device preferences.
+- supported optimization profiles.
+- known gaps and hardware requirements.
 
-A complete experiment invocation with one config, one model target, one
-workload target, and one output directory.
+The model spec is not a user-authored capabilities file. Runtime information is
+still reported by the backend or server.
 
-`episode`
+See `docs/wamfile.md`.
 
-A task rollout or open-loop sample sequence. Simulator-backed runs may contain
-many episodes. Open-loop smoke tests may contain one synthetic episode.
-
-`step`
-
-One environment or replay step. A step may consume an action from a previously
-generated action chunk without calling the model.
-
-`replan`
-
-A point where the harness calls the model to produce a new action chunk.
-Replanning is the WAM analogue of a repeated inference request in an LLM
-serving workload.
-
-`inference_call`
-
-One backend invocation. It includes preprocess, model execution, postprocess,
-and optional cache update.
-
-`action_chunk`
-
-A sequence of actions produced by one inference call. The runner may execute
-all or part of the chunk before replanning.
-
-## Inference Contract
-
-The harness input and output contract is intentionally small.
+## Core Data Contract
 
 ### Observation
 
-Required fields:
+Required:
 
-- `images`: named image views. Examples: `primary`, `wrist`, `exterior_0`.
+- `images`: named image views such as `primary`, `wrist`, or `exterior_0`.
 - `prompt`: task instruction or natural language goal.
 
-Optional fields:
+Optional:
 
 - `state`: named numeric vectors such as `proprio`, `joint_position`,
   `cartesian_position`, or `gripper`.
@@ -82,13 +111,13 @@ Optional fields:
 
 ### Inference Request
 
-Required fields:
+Required:
 
 - `observation`
 - `action_horizon`
 - `replan_steps`
 
-Optional fields:
+Optional:
 
 - `num_inference_steps`
 - `return_future`
@@ -96,335 +125,161 @@ Optional fields:
 - `reset`
 - `cache_control`
 - `runtime_options`
+- `optimization_profiles`
 
 ### Inference Result
 
-Required fields:
+Required:
 
 - `action_chunk`: actions with shape-like metadata, usually `[T, D]`.
 
-Optional fields:
+Optional:
 
-- `future_frames`: predicted visual futures.
-- `value`: scalar or vector value-style prediction.
-- `warnings`: non-fatal backend warnings.
-- `backend_metadata`: backend-specific diagnostics that do not change core
-  behavior.
-- `timing`: stage timing from the backend if available.
-- `memory`: backend memory data if available.
+- `future_frames`: JSON-safe summary or artifact reference for predicted frames.
+- `value`: JSON-safe value estimate or artifact reference.
+- `warnings`
+- `backend_metadata`
+- `timing`
+- `memory`
 
-## Execution Stages
+Large arrays should be written as artifacts referenced from trace metadata, not
+embedded directly in JSONL traces or serve responses.
 
-Every backend should be observable through these stages, even if some are
-no-ops.
+## Runtime Info
 
-`load`
-
-Load model weights, processors, normalizers, runtime resources, or remote
-client state.
-
-`warmup`
-
-Run optional dry-run inference so first-call effects can be separated from
-steady-state measurements.
-
-`reset`
-
-Clear episode, session, action buffer, cache, or backend history state.
-
-`preprocess`
-
-Convert harness observations into backend-native inputs.
-
-`infer`
-
-Run the model or remote policy call.
-
-`postprocess`
-
-Convert backend-native outputs into harness results. This includes action
-denormalization when needed.
-
-`env_step`
-
-Consume an action in a simulator, open-loop replay source, or future robot
-interface.
-
-`trace`
-
-Write structured measurement events. Trace writing must not silently drop
-errors.
-
-## Measurement Contract
-
-The harness exists to answer systems questions. Each run should record enough
-data to separate workload pressure, method effect, and side effects.
-
-### Latency
-
-Minimum fields:
-
-- `preprocess_ms`
-- `model_ms`
-- `postprocess_ms`
-- `env_step_ms`
-- `total_ms`
-
-Optional fields:
-
-- `cuda_ms`
-- `server_ms`
-- `client_ms`
-- `serialization_ms`
-- `queue_ms`
-
-### Memory
-
-Minimum fields:
-
-- `cuda_allocated_mb`
-- `cuda_reserved_mb`
-- `cuda_peak_allocated_mb`
-- `cuda_peak_reserved_mb`
-- `process_rss_mb`
-
-Optional fields:
-
-- `memory_delta_mb`
-- `fragmentation_hint`
-- `snapshot_id`
-- `graph_pool_bytes`
-- `cache_bytes`
-
-### Workload Shape
-
-Minimum fields:
-
-- `image_shapes`
-- `state_dims`
-- `history_len`
-- `action_horizon`
-- `replan_steps`
-- `action_dim`
-
-### Runtime
-
-Minimum fields:
-
-- `model_name`
-- `backend`
-- `source_repo`
-- `mode`: `local`, `remote`, or `fake`.
-- `device`
-- `dtype`
-- `optimization_flags`
-
-### Correctness
-
-Optimization variants must not be judged by speed alone. Each experiment should
-declare the output comparison it can support.
-
-Examples:
-
-- exact match for fake backend outputs.
-- numeric tolerance for deterministic action chunks.
-- task success rate for simulator rollouts.
-- bounded visual metric or artifact inspection for future frames.
-- explicit "not comparable" only for exploratory measurements.
-
-#### Output Persistence And Alignment
-
-A correctness gate is only meaningful if baseline and variant outputs can actually
-be compared. The harness must therefore make outputs comparable by construction:
-
-- **Shared seed.** Baseline and variant use the same `seed`, so observations are
-  produced in the same order and any RNG inside the backend is controlled. Two runs
-  that did not share a seed are `not_comparable` for numeric gates.
-- **Output artifacts.** Action chunks (and optional future frames / values) used for
-  the gate are persisted under the run output directory, not embedded in traces.
-  Traces store the artifact path plus shape metadata (see `docs/trace_schema.md`).
-- **Alignment key.** Outputs are aligned by `(episode_id, step_id, replan_id)` so the
-  comparator matches the same decision point across runs rather than by array index.
-- **Comparison event.** The comparator emits a `comparison_result` trace event with
-  the gate type, per-side statistics, the measured difference, the noise floor, and a
-  final `decision` (`useful` / `neutral` / `regression` / `not_comparable`). See
-  `docs/measurement.md` for how the decision is computed.
-
-### Failures
-
-Failures should be trace events, not only terminal logs.
-
-Minimum fields:
-
-- `stage`
-- `error_type`
-- `message`
-- `recoverable`
-- `backend`
-- `run_id`
-- `episode_id` when available.
-
-## Systems Idea Experiment Contract
-
-Every systems idea should be expressed as a baseline-vs-variant experiment.
-
-Required fields:
-
-- `idea`: short name.
-- `pressure`: the underlying systems pressure the idea addresses.
-- `existence_check`: how to determine whether that pressure exists in WAM.
-- `method`: the mechanism being tested.
-- `assumptions`: conditions required for the method to apply.
-- `baseline`: settings without the idea.
-- `variant`: settings with the idea.
-- `metrics`: primary and secondary measurements.
-- `correctness_gate`: how outputs are compared.
-- `decision_rule`: what result counts as useful, neutral, or negative.
-
-Measurement protocol fields (see `docs/measurement.md` for semantics):
-
-- `seed`: integer seed controlling RNG and observation order. Baseline and variant
-  must share the same seed so inputs match step-for-step.
-- `warmup_iters`: number of leading inference calls discarded before statistics.
-- `repetitions`: number of post-warmup samples per measured path.
-- `runs`: number of independent process runs used to estimate run-to-run noise.
-- `min_effect`: minimum relative change on the primary metric below which the
-  result is judged `neutral` regardless of significance.
-
-These fields make `decision_rule` reproducible rather than anecdotal. A variant
-that improves the primary metric by less than `min_effect`, or by less than the
-run-to-run noise floor, is `neutral`, not `useful`.
-
-Example:
-
-```yaml
-idea: cuda_graph
-pressure: Repeated static-shape GPU inference can spend meaningful time in CPU
-  launch overhead and allocator churn.
-existence_check:
-  - repeated replan calls share image shapes, state dims, action horizon, and dtype
-  - model_ms has non-trivial CPU launch or dispatch overhead
-method: Capture a stable inference path and replay it after warmup.
-assumptions:
-  - no allocation inside capture unless routed through a graph-safe pool
-  - shapes stay stable across replans
-  - randomness and cache state remain controlled
-baseline:
-  cuda_graph: false
-variant:
-  cuda_graph: true
-metrics:
-  primary: [model_ms_p50, model_ms_p95]
-  secondary: [warmup_s, cuda_peak_allocated_mb, capture_failure_rate]
-correctness_gate: action_chunk numeric tolerance against eager baseline
-decision_rule: Useful only if p95 model latency improves without unacceptable
-  memory growth or output drift.
-```
-
-## Characterization Experiment Contract
-
-Before any baseline-vs-variant experiment, the harness must be able to answer the
-prior question: *does the pressure this idea targets actually exist in this WAM
-workload?* That question is answered by a **characterization** experiment, which
-profiles a single configuration without a variant.
-
-A characterization experiment is a first-class run type, not a degenerate
-baseline-vs-variant. It has no `variant`, no `correctness_gate`, and no
-`decision_rule` in the useful/neutral/regression sense. Its job is to measure
-where time and memory go, so an `existence_check` becomes data-backed.
-
-Required fields:
-
-- `idea`: the systems idea this characterization informs (or `none` for general
-  profiling).
-- `mode`: `characterization`.
-- `target`: backend + workload being profiled.
-- `existence_check`: the specific question being answered (e.g. "does model_ms
-  carry non-trivial CPU launch overhead?").
-- `metrics`: which measurements decide whether the pressure exists.
-- `seed`, `warmup_iters`, `repetitions`, `runs`: same measurement protocol fields.
-
-Output:
-
-- A characterization run produces the same trace schema as any other run, plus a
-  per-stage breakdown (preprocess / model / postprocess / env_step shares of
-  total) and a memory profile. It emits no `comparison_result` event.
-
-Example:
-
-```yaml
-idea: cuda_graph
-mode: characterization
-target:
-  backend: fastwam
-  workload: open_loop
-existence_check: Is repeated replan inference launch-bound rather than
-  preprocess- or env-bound?
-metrics:
-  - model_ms_p50
-  - model_ms_p95
-  - stage_share: [preprocess, model, postprocess, env_step]
-  - cuda_peak_allocated_mb
-seed: 0
-warmup_iters: 3
-repetitions: 30
-runs: 3
-```
-
-A baseline-vs-variant experiment for an idea should not be run until a
-characterization experiment shows its `existence_check` holds. An idea whose
-pressure does not exist in the workload is recorded as `not_applicable`, which is
-itself a useful research result.
-
-## Minimal Runtime Info
-
-Runtime info should be small at first. It is not a full model taxonomy.
+Backends or remote servers report minimal runtime information:
 
 ```yaml
 runtime_info:
-  name: fastwam-libero-2cam
+  manifest_id: fastwam-libero
+  model_name: FastWAM LIBERO 2-camera
   backend: fastwam
-  source_repo: FastWAM
+  processor: fastwam_libero
+  source_repo: yuantianyuan01/FastWAM
   mode: local
   device: cuda:0
   dtype: bf16
-  seed: 0
-  optimization_flags:
-    torch_compile: false
-    cuda_graph: false
+  optimization_profiles:
+    action_chunk_scheduling:
+      replan_steps: 4
 ```
 
-## Invariants
+The core runner should use this metadata for traces and user summaries, not for
+backend-specific branching.
 
-- The core runner must not branch on upstream repository names.
-- Backend-specific keys and tensor layouts must not leak into the core
-  contract.
-- Every optimization experiment needs a baseline, variant, measurement set, and
-  correctness gate.
-- Memory observation is a first-class requirement, not debug output.
-- Trace schemas should be append-only where possible.
-- A faster variant that breaks outputs, increases memory beyond the declared
-  limit, or only moves cost to another unmeasured stage is not a success.
+## Backend Boundary
 
-## Phase 1 Scope
+Backends expose lifecycle operations:
 
-Phase 1 should prove the contract with a fake backend and open-loop workload.
-It should not depend on real WAM checkpoints.
+- `load`
+- `warmup`
+- `reset`
+- `infer`
+- `runtime_info`
+- `close`
 
-Phase 1 must support:
+The core runner must not branch on upstream repository names. A new WAM should
+add a backend, processor, and model entry, not changes to the runner.
 
-- one fake backend.
-- one open-loop runner.
-- JSONL traces.
-- basic latency and memory observation.
-- baseline-vs-variant experiment records.
-- tests for trace shape and runner behavior.
+`close` releases resources created by the backend. It is especially important
+for native backends that start resident policy servers, WebSocket clients, CUDA
+graph pools, or temporary worker processes. Runners and smoke paths should call
+it even when inference fails.
 
-Phase 1 must defer:
+Official evaluation scripts are reference evaluators, not the long-term product
+backend. See `docs/native_backend_design.md`.
 
-- FastWAM checkpoint loading.
-- LIBERO and RoboTwin.
-- remote server implementation.
-- CUDA Graph and torch.compile execution.
-- multi-GPU scheduling.
-- dashboards.
+## Processor Boundary
+
+Processors translate between harness observations/results and backend-native
+model inputs/outputs. They own:
+
+- image view selection and preprocessing.
+- prompt formatting.
+- state vector mapping.
+- action denormalization.
+- future/value output conversion.
+- synthetic smoke observations for native backend bring-up.
+- modality limits and input requirements.
+
+Backend-native tensor layouts, key names, normalization constants, and cache
+mechanics must not leak into core interfaces.
+
+## Optimization Profiles
+
+Optimization profiles are explicit runtime toggles:
+
+```yaml
+optimizations:
+  enabled: [vla_cache]
+  profiles:
+    vla_cache:
+      enabled: true
+      cache_scope: replan
+```
+
+Each profile declares:
+
+- stable name.
+- deployment class.
+- scope: request, replan, episode, run, or server.
+- parameters and defaults.
+- backend requirements.
+- conflicts.
+- trace fields.
+
+Profiles default to off unless a model entry explicitly states otherwise.
+
+## Telemetry Contract
+
+Every run should emit enough structured telemetry to debug deployment and
+compare optional toggles:
+
+- run metadata: model entry id, backend, processor, source repo, device, dtype.
+- workload shape: image shapes, state dims, action horizon, replan steps.
+- timing: preprocess, model, postprocess, total, and server/client timing when
+  remote.
+- memory: process RSS and CUDA memory when available.
+- optimization metadata: enabled profiles and parameter values.
+- warnings and errors.
+- artifact paths for action chunks, future frames, and values when persisted.
+
+Telemetry is part of the product. It makes optimization toggles inspectable, but
+does not require every normal `wam run` to be a formal comparison.
+
+## Phase A Scope
+
+Phase A builds the no-heavy-dependency deployment spine:
+
+- model spec parser and one fake model entry.
+- registry for model entries, backends, processors, and optimization profiles.
+- fake backend.
+- open-loop workload.
+- runner with action chunk scheduling.
+- JSONL trace writer.
+- minimal memory/timing observer.
+- `wam run fake-open-loop`.
+- core container recipe and generic container smoke path.
+- tests for model spec parsing, fake inference, trace shape, and profile
+  metadata.
+
+Phase A defers real checkpoints, simulators, external endpoint serving, CUDA
+Graph, torch.compile, and multi-GPU scheduling.
+
+## Phase B/C/D Scope
+
+`Phase B: portable serve smoke`
+
+Run `wam serve fake-open-loop` inside a container or existing job allocation,
+with job-local health and inference checks. External laptop-to-node endpoint
+access is not required for this stage.
+
+`Phase C: first real model`
+
+Add the first curated WAM, likely `fastwam-libero`, with asset resolution and a
+backend container path that emits action chunks.
+
+`Phase D: first real trick`
+
+Add the first real training-free inference optimization profile, likely
+VLA-Cache if the OpenVLA/OpenVLA-OFT path is viable.

@@ -1,34 +1,110 @@
 # WAM Harness
 
-WAM Harness is a lightweight inference systems harness for world-action models.
+WAM Harness is an Ollama-like local deployment and inference-optimization
+platform for world-action models (WAMs).
 
-The project is currently a repository skeleton. It is intended to test whether
-LLM inference systems ideas transfer to WAM inference workloads while keeping
-model-specific code behind backends.
+The goal is to make WAM inference easy to run, easy to serve, and easy to
+accelerate without turning the core project into a collection of upstream model
+patches. A user should eventually be able to run or serve a curated model
+through the native product path, then enable measured inference tricks through
+explicit profiles such as `--opt vla_cache` or `--opt cuda_graph`.
+
+The repository is an early alpha. Its first job is to make the model entry
+workflow understandable before adding more heavy WAM checkpoints.
 
 ## Goals
 
-- Run repeatable WAM inference experiments.
-- Compare baseline and variant runs for systems ideas.
-- Record timing, memory, workload shape, runtime flags, and correctness gates.
-- Keep model-specific backends separate from the core runner.
-- Start with fake and open-loop workloads before adding real WAM checkpoints.
+- Provide a small local CLI for `wam list`, `wam info`, `wam doctor`,
+  `wam prepare`, `wam eval`, `wam serve`, and `wam compare`.
+- Maintain a curated WAM model registry with baked-in defaults through model
+  entries.
+- Run local or remote WAM backends behind one observation-to-action contract.
+- Provide two environment paths for heavy WAM stacks: portable container
+  recipes when a container runtime is available, and backend-specific
+  self-managed install scripts when it is not.
+- Expose inference-time optimizations through explicit profiles instead of
+  hidden code edits.
+- Record timing, memory, workload shape, runtime flags, and output checks so
+  optimization toggles are inspectable.
+- Keep model-specific preprocessing, normalization, tensor layouts, and server
+  protocols behind backends and processors.
+- Keep cluster scheduling outside the core project. Users and sites decide how
+  to submit jobs; the harness owns the command, runtime boundary, model
+  entries, traces, and model/runtime contracts.
 
-## Research Workflow
+## Product Direction
 
-The unit of work is reproducing one LLM inference-systems paper onto WAM
-inference, driven per paper through a six-stage pipeline: understand the source
-idea, check whether its pressure exists in WAM, design the transfer, reproduce
-it, then write up new findings. See `.collab/PIPELINE.md` for the pipeline and
-`.collab/WORKFLOW.md` for the Claude/Codex collaboration model.
+The project has two layers:
+
+- **Deployment spine:** a simple user path for discovering a model entry,
+  preparing its assets, running open-loop or simulator inference, and optionally
+  serving a policy endpoint.
+- **Telemetry layer:** trace, timing, memory, output artifacts, and comparison
+  summaries for acceleration toggles.
+
+See `docs/product_direction.md` for the full positioning.
+See `docs/cli_entrypoints.md` for the public command design.
+See `docs/next_goal.md` for the current execution target.
+See `docs/runtime_abstraction.md` for the runtime boundary.
+
+## Public Alpha CLI
+
+The intended first-user path is:
+
+```bash
+wam list
+wam info <model-id>
+wam doctor [model-id]
+wam prepare <model-id>
+wam run <model-id> --input obs.json --output action.json
+wam serve <model-id>
+```
+
+`prepare` is the public command for making a WAM model entry ready to use. It
+creates cache directories, verifies declared assets, and reports manual
+requirements. It does not install CUDA, Python environments, containers, or
+cluster launchers. The project should not lead with infrastructure-style
+`--dry-run` flows or require users to read internal YAML specs for the common
+path.
+
+Official simulator scripts are reference evaluators, not the default product
+path. For maintainer parity checks, call them explicitly:
+
+```bash
+wam eval fastwam-libero --reference --upstream-dir /path/to/FastWAM
+wam eval fastwam-libero \
+  --reference \
+  --workload libero-single-task \
+  --task-id 0 \
+  --num-trials 1 \
+  --upstream-dir /path/to/FastWAM
+```
+
+`fastwam-libero` is the model id. `libero-single-task` is an eval workload: it
+switches the official evaluator entrypoint without changing the checkpoint or
+action contract.
+
+For real WAMs, `wam run` requires an explicit observation input. WAM inference
+needs images, robot state, prompt, and optional session/history; the CLI does
+not silently invent those inputs. Use `wam native-smoke <model-id>` for
+maintainer synthetic-observation smoke tests.
+
+## Optimization Profiles
+
+Optimization integrations are deployment-first. Training-free inference methods
+such as cache reuse, action scheduling, CUDA Graph, torch.compile, and
+post-training quantization are prioritized before training recipes or new model
+architectures. See `docs/optimization_integration.md`.
 
 ## Non-Goals For The First Version
 
 - Training.
+- Real robot hardware control.
+- Exhaustive model zoo coverage.
 - Full benchmark dashboards.
-- Real robot deployment.
 - Multi-GPU scheduling.
 - Model reimplementation.
+- Replacing Hugging Face Hub or upstream checkpoint distribution.
 
 ## Planned Layout
 
@@ -41,12 +117,31 @@ src/wam_harness/
   deploy/     Server-client protocol and remote policy utilities.
   cli/        Command-line entry points.
 
-configs/      Experiment configuration examples.
+configs/      Run, model, and optimization configuration examples.
 examples/     Minimal inputs for smoke tests.
 tests/        Unit and integration tests.
 docs/         Design notes and schemas.
 scripts/      Repository maintenance scripts.
 ```
+
+The first runnable vertical slices are:
+
+1. **A: portable deployment spine** - restore minimal contract types, fake
+   backend, open-loop runner, trace writer, `wam run`, and a core container
+   smoke path.
+2. **B: portable serve smoke** - run `wam serve fake-open-loop` inside a
+   container or existing job allocation and record health/runtime telemetry.
+3. **C: first real model** - add a curated FastWAM model entry and backend
+   container path that can prepare released checkpoint assets and emit actions.
+4. **D: first real trick** - expose one real training-free inference
+   optimization, likely VLA-Cache, as an on/off profile with trace-backed
+   comparison.
+
+Local development should keep the core package cheap to test. Heavy-model
+validation can happen on any suitable internal GPU environment, but no specific
+cluster should become a public dependency or the main abstraction. The public
+target is: run the same `wam` command inside any environment that provides the
+needed GPU runtime, backend dependencies, cache directory, and model assets.
 
 ## Reference Systems
 
@@ -58,11 +153,22 @@ The initial harness design is informed by:
 - LingBot-VA: remote inference, cache control, and server timing metadata.
 - Motus: standalone image-to-action smoke testing.
 - Qi: optional inference optimization ideas such as CUDA Graph and torch.compile.
+- Ollama: local model UX, simple model library commands, one-command run/serve
+  flow, and default model metadata.
 
 ## Status
 
-No implementation code has been added yet. This repository only defines the
-initial open-source project skeleton and systems experiment contract.
+Phase A implementation has started. The current runnable target is the built-in
+fake model:
+
+```bash
+uv run wam run fake-open-loop
+uv run wam run fake-open-loop --opt fake_cache
+uv run wam serve fake-open-loop --smoke
+```
+
+These commands exercise the same model-entry registry, backend, workload,
+runner, and trace path that future real WAM backends should use.
 
 ## Environment
 
@@ -74,8 +180,50 @@ uv run pytest
 uv run ruff check .
 ```
 
-The current repository is configured as a non-package project until
-implementation files are added under `src/wam_harness`.
+The project is packaged through `src/wam_harness` and exposes the `wam` CLI.
+
+There are two supported setup paths:
+
+- **Core development environment:** use `uv sync --dev` and run fake/backend
+  contract tests locally.
+- **Heavy backend runtime:** either build a backend container image, or install
+  the backend's self-managed environment script on a machine where containers
+  are not available.
+
+Build the core container image locally with:
+
+```bash
+docker build -f containers/core/Dockerfile -t wam-harness-core:latest .
+```
+
+Build the FastWAM backend image when Docker or a compatible cluster container
+runtime is available:
+
+```bash
+docker build -f containers/fastwam/Dockerfile -t wam-harness-fastwam:latest .
+```
+
+Install the FastWAM runtime directly when containers are not available:
+
+```bash
+scripts/setup_fastwam_native_env.sh \
+  --upstream-dir /path/to/FastWAM \
+  --venv /path/to/.venv-fastwam \
+  --cache-dir /path/to/wam-cache \
+  --clone
+```
+
+Then activate the environment and use the normal `wam` commands:
+
+```bash
+source /path/to/.venv-fastwam/bin/activate
+wam doctor fastwam-libero --cache-dir /path/to/wam-cache --upstream-dir /path/to/FastWAM
+wam prepare fastwam-libero --cache-dir /path/to/wam-cache
+```
+
+Cluster users should launch prepared images or activated self-managed
+environments with their site's normal tooling. Site-specific submission scripts
+belong outside the public package.
 
 ## License
 

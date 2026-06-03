@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+dist/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
@@ -14,10 +15,12 @@ env/
 
 # Editors and OS files
 .DS_Store
+.claude/
 .idea/
 .vscode/
 
 # Local experiment outputs
+.local/
 runs/
 artifacts/
 outputs/

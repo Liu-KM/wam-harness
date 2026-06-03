@@ -1,7 +1,24 @@
 # Reference Repositories
 
 This harness is not a copy of any one WAM repository. It borrows design lessons
-from several inference systems.
+from local model tools, inference systems, and WAM/VLA repositories.
+
+## Ollama
+
+Useful as the product reference for a local model UX: model ids, simple model
+library commands, prepare/run/serve flow, and curated defaults that hide common
+setup details.
+
+WAM Harness cannot copy Ollama directly because WAM assets include checkpoints,
+normalizers, action schemas, camera conventions, processors, and often simulator
+dependencies. Curated model entries should provide the analogous default layer.
+
+## LeRobot
+
+Useful as the ecosystem reference for robot-learning datasets, policies, and
+model distribution on Hugging Face. WAM Harness should complement this ecosystem
+rather than replace it: use upstream assets and provide a deployment plus
+inference-optimization wrapper.
 
 ## FastWAM
 
@@ -31,15 +48,4 @@ action chunks and predicted frames.
 ## Qi
 
 Useful as a later optimization reference for CUDA Graph, torch.compile, cache
-management, and dry-run benchmarks.
-
-## VibeTensor
-
-Useful as a systems research artifact reference. The harness should borrow its
-measurement-first discipline, baseline-vs-variant checks, allocator and CUDA
-Graph observability mindset, and warning that local component correctness does
-not guarantee global system performance.
-
-The harness should not borrow VibeTensor's self-contained tensor runtime,
-autograd engine, C++/CUDA extension stack, Node.js frontend, or production
-allocator implementation.
+management, and no-execute planning benchmarks.

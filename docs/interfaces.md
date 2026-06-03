@@ -1,14 +1,15 @@
 # 上层接口契约（Interfaces）
 
-本文件用 Python `Protocol` 的形式确定 WAM Harness 的核心抽象边界。它是 Codex
-实现时**不可改动**的接口真相来源；Codex 只填实现体，需要改签名必须在结构化回交里申报。
+本文件用 Python `Protocol` 的形式确定 WAM Harness 的核心抽象边界。实现可以在
+Phase A 中细化这些草图，但必须保持产品边界：model id → model entry → backend /
+processor → action chunk。
 
 设计原则（见 `AGENTS.md`）：核心 runner 只用契约词汇推理，不得出现任何上游仓库
 （FastWAM/DreamZero/Cosmos/LingBot/Motus/Qi）的分支判断。backend-native 的张量
 布局、归一化、cache 机制、传输协议一律不得穿过这些接口。
 
 > 这些是契约草图，不是 `src/` 实现。类型最终落在 `src/wam_harness/core/`，
-> 由 Phase 1 任务卡 001 实现。
+> 由 Phase A deployment spine 实现。
 
 ## 数据类型（契约对象）
 
@@ -46,6 +47,19 @@ class InferenceResult(Protocol):
     backend_metadata: dict[str, Any]
     timing: Optional[dict[str, float]]
     memory: Optional[dict[str, float]]
+
+class ModelEntry(Protocol):
+    id: str
+    backend: dict[str, Any]
+    processor: dict[str, Any]
+    assets: dict[str, Any]
+    defaults: dict[str, Any]
+    optimizations: dict[str, Any]
+
+class OptimizationProfile(Protocol):
+    name: str
+    deployment_class: str
+    parameters: dict[str, Any]
 ```
 
 ## 生命周期接口
@@ -58,20 +72,25 @@ backend 暴露契约定义的推理生命周期。它**不**向核心泄露 back
 ```python
 @runtime_checkable
 class Backend(Protocol):
-    def load(self) -> "RuntimeInfo": ...
-    def warmup(self, request: InferenceRequest) -> None: ...
-    def reset(self, *, seed: Optional[int] = None) -> None: ...
+    def load(self) -> None: ...
+    def warmup(self) -> None: ...
+    def reset(self) -> None: ...
     def infer(self, request: InferenceRequest) -> InferenceResult: ...
     # preprocess/postprocess 由 backend 内部经 Processor 完成，不在核心循环显式调用。
     def runtime_info(self) -> "RuntimeInfo": ...
+    def close(self) -> None: ...
 ```
 
 约定：
-- `load` 返回 `RuntimeInfo`（name/backend/source_repo/mode/device/dtype/seed/
-  optimization_flags），核心由此获知运行元数据，而非用户手写 capabilities。
-- `reset` 接受可选 seed，使 baseline 与 variant 决定性对齐（见 measurement.md）。
+- `load` 加载权重、processor 绑定、server/client 连接等重资源。
+- `runtime_info` 返回 model_entry_id/name/backend/source_repo/mode/device/dtype/
+  optimization_profiles，核心由此获知运行元数据，而非用户手写 capabilities。
+- `reset` 清理 episode/session/action-buffer/cache 边界；需要 seed 的后续 backend 可通过
+  request/runtime_options 或 backend config 传递，但不要把 backend-native 状态泄露给 core。
 - `infer` 内部完成 preprocess→model→postprocess，并在 `InferenceResult.timing`
-  里按 measurement 协议填充各阶段毫秒。
+  里填充各阶段毫秒。
+- `close` 释放 backend 自己创建的 server、socket、worker、CUDA graph pool 或临时状态；
+  runner/smoke/serve shutdown 路径都应调用。
 
 ### Processor
 
@@ -83,23 +102,26 @@ class Processor(Protocol):
     def to_model_inputs(self, observation: Observation) -> Any: ...
     def to_harness_result(self, raw_output: Any) -> InferenceResult: ...
     def modality_limits(self) -> dict[str, Any]: ...
+    def smoke_observation(self) -> Observation: ...
 ```
 
 ### Registry
 
-registry 把 model/backend 名映射到实现，核心据此选择 backend，**不得**对仓库名做分支。
+registry 把 model/backend/processor/workload 名映射到实现，核心据此选择实现，**不得**对仓库名做分支。
 
 ```python
 @runtime_checkable
 class Registry(Protocol):
-    def register(self, name: str, factory: Any) -> None: ...
-    def create(self, name: str, config: dict[str, Any]) -> Backend: ...
-    def available(self) -> list[str]: ...
+    def register_backend(self, name: str, factory: Any) -> None: ...
+    def register_processor(self, name: str, factory: Any) -> None: ...
+    def register_workload(self, name: str, factory: Any) -> None: ...
+    def create_backend(self, model_entry: ModelEntry, profiles: list[Any]) -> Backend: ...
+    def create_processor(self, model_entry: ModelEntry) -> Processor: ...
 ```
 
 ### Observer（时间/内存）
 
-observer 按 measurement 协议采集计时与内存，CPU-only 下干净降级。
+observer 采集计时与内存，CPU-only 下干净降级。
 
 ```python
 @runtime_checkable
@@ -130,7 +152,7 @@ class TraceWriter(Protocol):
 class Comparator(Protocol):
     def compare(
         self, baseline_trace: str, variant_trace: str
-    ) -> "ComparisonResult": ...   # 含 decision: useful/neutral/regression/not_comparable
+    ) -> "ComparisonResult": ...   # faster/slower/same/invalid/not_comparable
 ```
 
 ## 不变量（呼应 contract.md）
