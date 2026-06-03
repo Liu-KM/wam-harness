@@ -1,0 +1,32 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        curl \
+        ffmpeg \
+        git \
+        git-lfs \
+        libegl1 \
+        libgl1 \
+        libgles2 \
+        libglib2.0-0 \
+        libglvnd0 \
+        libosmesa6 \
+        libxext6 \
+        libxrender1 \
+        make \
+        ninja-build \
+        pkg-config
+    rm -rf /var/lib/apt/lists/*
+    python -m pip install --no-cache-dir -U pip uv
+
+%runscript
+    exec "$@"

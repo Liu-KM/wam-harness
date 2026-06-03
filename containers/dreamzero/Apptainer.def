@@ -1,0 +1,73 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    export NVIDIA_DRIVER_CAPABILITIES=all
+    export PIP_NO_CACHE_DIR=1
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        cmake \
+        curl \
+        ffmpeg \
+        git \
+        git-lfs \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdbus-1-3 \
+        libegl1 \
+        libgl1 \
+        libglu1-mesa \
+        libgles2 \
+        libglib2.0-0 \
+        libglvnd0 \
+        libgtk-3-0 \
+        libice6 \
+        libnss3 \
+        libosmesa6 \
+        libsm6 \
+        libvulkan1 \
+        libx11-6 \
+        libx11-xcb1 \
+        libxcb-cursor0 \
+        libxcb-icccm4 \
+        libxcb-image0 \
+        libxcb-keysyms1 \
+        libxcb-render-util0 \
+        libxcb-xinerama0 \
+        libxcb-xinput0 \
+        libxcomposite1 \
+        libxcursor1 \
+        libxdamage1 \
+        libxext6 \
+        libxfixes3 \
+        libxi6 \
+        libxinerama1 \
+        libxkbcommon0 \
+        libxkbcommon-x11-0 \
+        libxrandr2 \
+        libxrender1 \
+        libxss1 \
+        libxt6 \
+        libxtst6 \
+        libxmu6 \
+        libxxf86vm1 \
+        make \
+        mesa-utils \
+        ninja-build \
+        pkg-config \
+        vulkan-tools \
+        wget \
+        xauth \
+        zenity
+    rm -rf /var/lib/apt/lists/*
+    python -m pip install --no-cache-dir -U pip uv huggingface_hub
+
+%runscript
+    exec "$@"
