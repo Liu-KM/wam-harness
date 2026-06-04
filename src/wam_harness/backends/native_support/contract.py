@@ -19,6 +19,8 @@ class NativeContractBackend(Protocol):
 
     def native_model_adapter_name(self) -> str | None: ...
 
+    def optimization_status_overrides(self) -> dict[str, dict[str, object]]: ...
+
 
 def native_runtime_contract_payload(
     manifest: Manifest,
@@ -40,6 +42,7 @@ def native_runtime_contract_payload(
         "optimization_profile_status": native_optimization_status_dicts(
             manifest,
             profiles,
+            applied_statuses=_backend_optimization_status_overrides(backend),
         ),
         "deployment": dict(manifest.deployment),
         "backend_config_keys": sorted(
@@ -92,6 +95,15 @@ def _backend_runtime_mode(backend: object | None) -> str | None:
         return None
     mode = _as_contract_backend(backend).native_runtime_mode()
     return str(mode) if mode is not None else None
+
+
+def _backend_optimization_status_overrides(
+    backend: object | None,
+) -> dict[str, dict[str, object]]:
+    if backend is None or not hasattr(backend, "optimization_status_overrides"):
+        return {}
+    value = _as_contract_backend(backend).optimization_status_overrides()
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _as_contract_backend(backend: object) -> NativeContractBackend:

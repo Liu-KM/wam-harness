@@ -560,8 +560,21 @@ def test_native_backend_runtime_info_records_optimization_plan(tmp_path) -> None
     profiles = registry.build_optimization_profiles(manifest, ["action_chunk_scheduling"])
     backend = registry.create_backend(manifest, profiles)
 
+    statuses = backend.apply_optimization_profiles(profiles)
     plan = backend.runtime_info().metadata["native_optimization_plan"]
 
+    assert statuses == [
+        {
+            "name": "action_chunk_scheduling",
+            "enabled": True,
+            "params": {},
+            "declared_supported": True,
+            "scope": "simulator_eval",
+            "target": "workload",
+            "state": "applied",
+            "hook": "action_chunk_contract",
+        }
+    ]
     assert plan == [
         {
             "name": "action_chunk_scheduling",
@@ -570,7 +583,8 @@ def test_native_backend_runtime_info_records_optimization_plan(tmp_path) -> None
             "declared_supported": True,
             "scope": "simulator_eval",
             "target": "workload",
-            "state": "requested",
+            "state": "applied",
+            "hook": "action_chunk_contract",
         }
     ]
 

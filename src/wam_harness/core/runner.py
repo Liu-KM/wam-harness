@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from wam_harness.core.action_contract import ActionContractError
-from wam_harness.core.backend_session import BackendSession
 from wam_harness.core.inference_trace import (
     observation_summary,
 )
+from wam_harness.core.invocation import Invocation
 from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.runtime import INPUT_RUN_SPEC, RUN_SPEC
-from wam_harness.core.tracing import TraceWriter
 from wam_harness.core.types import (
     InferenceRequest,
     InferenceResult,
@@ -83,10 +81,15 @@ class Runner:
         )
         if observation is None and runtime_plan.transformed:
             raise RunInputRequiredError(_run_input_required_message(model_id))
-        manifest = runtime_plan.manifest
-        profiles = self.registry.build_optimization_profiles(manifest, enabled_opts or [])
-        backend = self.registry.create_backend(manifest, profiles)
-        workload, processor = self._create_workload(manifest, observation)
+        invocation = Invocation.from_runtime_plan(
+            registry=self.registry,
+            model_id=model_id,
+            runtime_plan=runtime_plan,
+            enabled_opts=enabled_opts,
+            trace_dir=trace_dir,
+        )
+        manifest = invocation.manifest
+        workload = self._create_workload(manifest, observation, invocation.processor)
 
         defaults = manifest.defaults
         effective_action_horizon = int(
@@ -98,142 +101,125 @@ class Runner:
         if episode_length is not None:
             workload.episode_length = episode_length
 
-        run_id = uuid.uuid4().hex[:12]
-        output_dir = (Path(trace_dir) / run_id) if trace_dir is not None else Path("runs") / run_id
-        trace_path = output_dir / "trace.jsonl"
-
         pending_actions: list[list[float]] = []
         model_calls = 0
         steps = 0
         last_result: InferenceResult | None = None
-        runtime_info = backend.runtime_info()
+        runtime_info = invocation.backend.runtime_info()
 
-        with TraceWriter(trace_path, run_id, runtime_info) as trace:
-            with BackendSession(
-                manifest=manifest,
-                profiles=profiles,
-                backend=backend,
-                processor=processor,
-                trace=trace,
-            ) as session:
-                trace.write(
-                    "run_start",
-                    mode=str(manifest.backend.get("mode", "run")),
-                    output_dir=str(output_dir),
-                    optimization_profiles=[profile.to_dict() for profile in profiles],
-                    manifest_defaults=defaults,
-                    known_gaps=manifest.known_gaps,
-                    telemetry_config={"trace_format": "jsonl"},
-                    synthetic_observation=manifest.workload_name == "processor_smoke",
-                )
-                try:
-                    session.emit_runtime_contract()
-                    session.emit_preflight()
-                    session.load_backend()
-                    session.warmup_backend()
-                    runtime_info = session.runtime_info
-                    workload.reset()
-                    session.reset_backend()
-                    trace.write("episode_start", episode_id=workload.episode_id)
+        with invocation:
+            trace = invocation.trace
+            session = invocation.session
+            invocation.write_start(
+                "run_start",
+                mode=str(manifest.backend.get("mode", "run")),
+                telemetry_config={"trace_format": "jsonl"},
+                synthetic_observation=manifest.workload_name == "processor_smoke",
+            )
+            try:
+                invocation.start_backend()
+                runtime_info = session.runtime_info
+                workload.reset()
+                trace.write("episode_start", episode_id=workload.episode_id)
 
-                    while not workload.done:
-                        if not pending_actions or workload.steps_since_replan >= effective_replan_steps:
-                            observation = workload.observation()
-                            replan_id = model_calls
-                            trace.write(
-                                "replan_start",
-                                episode_id=workload.episode_id,
-                                step_id=workload.step_id,
-                                replan_id=replan_id,
-                                action_horizon=effective_action_horizon,
-                                replan_steps=effective_replan_steps,
-                                observation_summary=observation_summary(observation),
-                                history_len=len(observation.history),
-                            )
-                            request = InferenceRequest(
-                                observation=observation,
-                                action_horizon=effective_action_horizon,
-                                replan_steps=effective_replan_steps,
-                                optimization_profiles=profiles,
-                                runtime_options=runtime_options or {},
-                            )
-                            trace.write(
-                                "inference_start",
-                                episode_id=workload.episode_id,
-                                step_id=workload.step_id,
-                                replan_id=replan_id,
-                            )
-                            result = session.infer_and_trace(
-                                request,
-                                event="inference_end",
-                                expected_horizon=effective_action_horizon,
-                                payload={
-                                    "episode_id": workload.episode_id,
-                                    "step_id": workload.step_id,
-                                    "replan_id": replan_id,
-                                    "action_horizon": effective_action_horizon,
-                                    "replan_steps": effective_replan_steps,
-                                },
-                            )
-                            last_result = result
-                            pending_actions = list(result.action_chunk.actions)
-                            workload.mark_replan()
-                            model_calls += 1
-
-                        action = pending_actions.pop(0) if pending_actions else []
-                        from_stale_chunk = bool(pending_actions)
-                        step_start = time.perf_counter()
-                        workload.step(action)
-                        steps += 1
+                while not workload.done:
+                    if not pending_actions or workload.steps_since_replan >= effective_replan_steps:
+                        observation = workload.observation()
+                        replan_id = model_calls
                         trace.write(
-                            "step",
+                            "replan_start",
                             episode_id=workload.episode_id,
                             step_id=workload.step_id,
+                            replan_id=replan_id,
                             action_horizon=effective_action_horizon,
                             replan_steps=effective_replan_steps,
-                            action_chunk_len=len(pending_actions),
-                            action_dim=len(action),
-                            from_stale_chunk=from_stale_chunk,
-                            env_step_ms=(time.perf_counter() - step_start) * 1000,
-                            action=action,
+                            observation_summary=observation_summary(observation),
+                            history_len=len(observation.history),
                         )
+                        request = InferenceRequest(
+                            observation=observation,
+                            action_horizon=effective_action_horizon,
+                            replan_steps=effective_replan_steps,
+                            optimization_profiles=invocation.profiles,
+                            runtime_options=runtime_options or {},
+                        )
+                        trace.write(
+                            "inference_start",
+                            episode_id=workload.episode_id,
+                            step_id=workload.step_id,
+                            replan_id=replan_id,
+                        )
+                        result = session.infer_and_trace(
+                            request,
+                            event="inference_end",
+                            expected_horizon=effective_action_horizon,
+                            payload={
+                                "episode_id": workload.episode_id,
+                                "step_id": workload.step_id,
+                                "replan_id": replan_id,
+                                "action_horizon": effective_action_horizon,
+                                "replan_steps": effective_replan_steps,
+                            },
+                        )
+                        last_result = result
+                        pending_actions = list(result.action_chunk.actions)
+                        workload.mark_replan()
+                        model_calls += 1
 
-                    trace.write("episode_end", episode_id=workload.episode_id, steps=steps)
+                    action = pending_actions.pop(0) if pending_actions else []
+                    from_stale_chunk = bool(pending_actions)
+                    step_start = time.perf_counter()
+                    workload.step(action)
+                    steps += 1
                     trace.write(
-                        "run_end",
-                        status="ok",
-                        model_calls=model_calls,
-                        steps=steps,
-                        warnings=[],
-                        trace_path=str(trace_path),
+                        "step",
+                        episode_id=workload.episode_id,
+                        step_id=workload.step_id,
+                        action_horizon=effective_action_horizon,
+                        replan_steps=effective_replan_steps,
+                        action_chunk_len=len(pending_actions),
+                        action_dim=len(action),
+                        from_stale_chunk=from_stale_chunk,
+                        env_step_ms=(time.perf_counter() - step_start) * 1000,
+                        action=action,
                     )
-                except Exception as exc:
-                    trace.write(
-                        "error",
-                        stage="preflight"
-                        if isinstance(exc, PreflightError)
-                        else "action_contract"
-                        if isinstance(exc, ActionContractError)
-                        else "runner",
-                        error_type=type(exc).__name__,
-                        message=str(exc),
-                        recoverable=isinstance(exc, PreflightError),
-                        backend=manifest.backend_name,
-                    )
-                    trace.write(
-                        "run_end",
-                        status="error",
-                        model_calls=model_calls,
-                        steps=steps,
-                        warnings=[str(exc)],
-                        trace_path=str(trace_path),
-                    )
-                    raise
+
+                trace.write("episode_end", episode_id=workload.episode_id, steps=steps)
+                trace.write(
+                    "run_end",
+                    status="ok",
+                    model_calls=model_calls,
+                    steps=steps,
+                    warnings=[],
+                    trace_path=str(invocation.trace_path),
+                )
+            except Exception as exc:
+                trace.write(
+                    "error",
+                    stage="preflight"
+                    if isinstance(exc, PreflightError)
+                    else "action_contract"
+                    if isinstance(exc, ActionContractError)
+                    else "runner",
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                    recoverable=isinstance(exc, PreflightError),
+                    backend=manifest.backend_name,
+                )
+                trace.write(
+                    "run_end",
+                    status="error",
+                    model_calls=model_calls,
+                    steps=steps,
+                    warnings=[str(exc)],
+                    trace_path=str(invocation.trace_path),
+                )
+                raise
 
         return RunSummary(
-            run_id=run_id,
+            run_id=invocation.run_id,
             model_id=model_id,
-            trace_path=trace_path,
+            trace_path=invocation.trace_path,
             steps=steps,
             model_calls=model_calls,
             status="ok",
@@ -245,16 +231,13 @@ class Runner:
         self,
         manifest: Manifest,
         observation: Observation | None,
-    ) -> tuple[object, object | None]:
+        processor: object,
+    ) -> object:
         if observation is not None:
-            return (
-                SingleObservationWorkload.from_observation(manifest, observation),
-                self.registry.create_processor(manifest),
-            )
+            return SingleObservationWorkload.from_observation(manifest, observation)
         if manifest.workload_name == "processor_smoke":
-            processor = self.registry.create_processor(manifest)
-            return ProcessorSmokeWorkload.from_processor(manifest, processor), processor
-        return self.registry.create_workload(manifest), None
+            return ProcessorSmokeWorkload.from_processor(manifest, processor)
+        return self.registry.create_workload(manifest)
 
 
 def _default_horizon(manifest: Manifest) -> int:

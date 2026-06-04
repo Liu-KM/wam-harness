@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from wam_harness.backends.native import (
     NativeBackendBase,
@@ -11,7 +11,6 @@ from wam_harness.backends.native import (
     NativeRuntimeLoader,
 )
 from wam_harness.core.types import InferenceRequest, Manifest, OptimizationProfile
-from wam_harness.processors.cosmos_policy_libero import CosmosPolicyLiberoProcessor
 
 
 class CosmosPolicyNativeBackendError(NativeBackendError):
@@ -202,10 +201,14 @@ class CosmosPolicyBackend(NativeBackendBase):
     )
     required_python_modules = ("numpy", "torch")
     model_adapter_name = CosmosPolicyModelAdapter.name
+    optimization_hooks: ClassVar[dict[str, str]] = {
+        **NativeBackendBase.optimization_hooks,
+        "jpeg_observation_compression": "preprocess_jpeg_compression",
+        "parallel_inference": "cosmos_parallel_inference",
+    }
 
     def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
         super().__init__(manifest, profiles, backend_label="Cosmos-Policy")
-        self.processor = CosmosPolicyLiberoProcessor.from_manifest(manifest)
         self.model: Any | None = None
         self.dataset_stats: dict[str, Any] | None = None
         self.cosmos_utils: Any | None = None

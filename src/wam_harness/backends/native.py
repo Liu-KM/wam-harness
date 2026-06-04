@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from wam_harness.core._utils import (
     default_cache_dir,
@@ -244,6 +244,9 @@ class NativeBackendBase:
     runtime_mode: str | None = None
     runtime_loader_name: str | None = None
     model_adapter_name: str | None = None
+    optimization_hooks: ClassVar[dict[str, str]] = {
+        "action_chunk_scheduling": "action_chunk_contract",
+    }
 
     def __init__(
         self,
@@ -263,6 +266,8 @@ class NativeBackendBase:
         self.upstream_repo: Path | None = None
         self.runtime_loader: NativeRuntimeLoader | None = None
         self.model_adapter: NativeModelAdapter | None = None
+        self.processor: NativeProcessor | None = None
+        self.optimization_statuses: dict[str, dict[str, object]] = {}
 
     def runtime_info(self, metadata: dict[str, object] | None = None) -> RuntimeInfo:
         payload: dict[str, object] = {
@@ -273,6 +278,7 @@ class NativeBackendBase:
             "native_optimization_plan": native_optimization_status_dicts(
                 self.manifest,
                 self.profiles,
+                applied_statuses=self.optimization_status_overrides(),
             ),
         }
         runtime_mode = self.native_runtime_mode()
@@ -337,6 +343,26 @@ class NativeBackendBase:
     def action_contract_enabled(self) -> bool:
         return True
 
+    def attach_processor(self, processor: object) -> None:
+        self.processor = processor  # type: ignore[assignment]
+
+    def apply_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        self.optimization_statuses = {
+            profile.name: self._apply_optimization_profile(profile)
+            for profile in profiles
+        }
+        return native_optimization_status_dicts(
+            self.manifest,
+            profiles,
+            applied_statuses=self.optimization_status_overrides(),
+        )
+
+    def optimization_status_overrides(self) -> dict[str, dict[str, object]]:
+        return dict(self.optimization_statuses)
+
     def native_required_upstream_paths(self) -> tuple[str, ...]:
         return tuple(self.required_upstream_paths)
 
@@ -369,6 +395,9 @@ class NativeBackendBase:
         mode = getattr(loader, "runtime_mode", None)
         return str(mode) if mode is not None else None
 
+    def native_optimization_hooks(self) -> dict[str, str]:
+        return dict(self.optimization_hooks)
+
     def infer(self, request: InferenceRequest) -> InferenceResult:
         """Run one native product inference through the shared harness spine."""
 
@@ -384,12 +413,11 @@ class NativeBackendBase:
         )
 
     def native_processor(self) -> NativeProcessor:
-        processor = getattr(self, "processor", None)
-        if processor is None:
+        if self.processor is None:
             raise self.error_cls(
                 f"{self.backend_label} backend does not expose a native processor"
             )
-        return processor
+        return self.processor
 
     def native_model_adapter(self, *, required: bool = True) -> NativeModelAdapter | None:
         adapter = self.model_adapter
@@ -782,6 +810,27 @@ class NativeBackendBase:
         settings: dict[str, object] = self.optimization_context(name)
         settings.update(self.profile_params(name))
         return settings
+
+    def _apply_optimization_profile(
+        self,
+        profile: OptimizationProfile,
+    ) -> dict[str, object]:
+        if profile.name not in self.manifest.supported_optimizations:
+            return {
+                "state": "unsupported_by_manifest",
+                "reason": "not_declared_in_manifest",
+            }
+        if not profile.enabled:
+            return {"state": "disabled"}
+
+        hook = self.native_optimization_hooks().get(profile.name)
+        if hook is not None:
+            return {"state": "applied", "hook": hook}
+
+        return {
+            "state": "requested",
+            "reason": "no_backend_hook",
+        }
 
     def upstream_config(self) -> dict[str, Any]:
         upstream = self.manifest.eval.get("upstream", {})

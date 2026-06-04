@@ -19,6 +19,7 @@ class FakeBackend:
         self.reset_count = 0
         config = manifest.backend.get("config", {})
         self.action_dim = int(config.get("action_dim", 4))
+        self.optimization_statuses: dict[str, dict[str, object]] = {}
 
     def load(self) -> None:
         self.loaded = True
@@ -45,6 +46,45 @@ class FakeBackend:
 
     def action_contract_enabled(self) -> bool:
         return False
+
+    def apply_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        statuses: list[dict[str, object]] = []
+        supported = set(self.manifest.supported_optimizations)
+        for profile in profiles:
+            state = "requested"
+            hook = None
+            reason = None
+            if profile.name not in supported:
+                state = "unsupported_by_manifest"
+                reason = "not_declared_in_manifest"
+            elif not profile.enabled:
+                state = "disabled"
+            elif profile.name == "fake_cache":
+                state = "applied"
+                hook = "fake_backend_latency_model"
+            elif profile.name == "action_chunk_scheduling":
+                state = "applied"
+                hook = "open_loop_replan_schedule"
+            else:
+                reason = "no_fake_backend_hook"
+            status = {
+                "name": profile.name,
+                "enabled": profile.enabled,
+                "params": dict(profile.params),
+                "declared_supported": profile.name in supported,
+                "state": state,
+                "target": "fake_backend",
+            }
+            if hook is not None:
+                status["hook"] = hook
+            if reason is not None:
+                status["reason"] = reason
+            statuses.append(status)
+            self.optimization_statuses[profile.name] = status
+        return statuses
 
     def runtime_info(self) -> RuntimeInfo:
         defaults = self.manifest.defaults

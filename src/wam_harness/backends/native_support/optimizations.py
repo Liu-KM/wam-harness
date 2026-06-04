@@ -14,6 +14,8 @@ class NativeOptimizationStatus:
     scope: str | None
     target: str
     state: str
+    hook: str | None = None
+    reason: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -26,14 +28,20 @@ class NativeOptimizationStatus:
         }
         if self.scope is not None:
             payload["scope"] = self.scope
+        if self.hook is not None:
+            payload["hook"] = self.hook
+        if self.reason is not None:
+            payload["reason"] = self.reason
         return payload
 
 
 def native_optimization_statuses(
     manifest: Manifest,
     profiles: list[OptimizationProfile],
+    applied_statuses: dict[str, dict[str, object]] | None = None,
 ) -> list[NativeOptimizationStatus]:
     supported = set(manifest.supported_optimizations)
+    applied = applied_statuses or {}
     return [
         NativeOptimizationStatus(
             name=profile.name,
@@ -42,7 +50,13 @@ def native_optimization_statuses(
             declared_supported=profile.name in supported,
             scope=_profile_scope(manifest, profile.name),
             target=_profile_target(_profile_scope(manifest, profile.name)),
-            state=_profile_state(profile, profile.name in supported),
+            state=_status_value(
+                applied.get(profile.name),
+                "state",
+                _profile_state(profile, profile.name in supported),
+            ),
+            hook=_status_optional_value(applied.get(profile.name), "hook"),
+            reason=_status_optional_value(applied.get(profile.name), "reason"),
         )
         for profile in profiles
     ]
@@ -51,8 +65,16 @@ def native_optimization_statuses(
 def native_optimization_status_dicts(
     manifest: Manifest,
     profiles: list[OptimizationProfile],
+    applied_statuses: dict[str, dict[str, object]] | None = None,
 ) -> list[dict[str, object]]:
-    return [status.to_dict() for status in native_optimization_statuses(manifest, profiles)]
+    return [
+        status.to_dict()
+        for status in native_optimization_statuses(
+            manifest,
+            profiles,
+            applied_statuses=applied_statuses,
+        )
+    ]
 
 
 def _profile_scope(manifest: Manifest, name: str) -> str | None:
@@ -80,3 +102,24 @@ def _profile_state(profile: OptimizationProfile, declared_supported: bool) -> st
     if not profile.enabled:
         return "disabled"
     return "requested"
+
+
+def _status_value(
+    status: dict[str, object] | None,
+    key: str,
+    default: str,
+) -> str:
+    if status is None:
+        return default
+    value = status.get(key)
+    return str(value) if value is not None else default
+
+
+def _status_optional_value(
+    status: dict[str, object] | None,
+    key: str,
+) -> str | None:
+    if status is None:
+        return None
+    value = status.get(key)
+    return str(value) if value is not None else None

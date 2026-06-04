@@ -15,6 +15,7 @@ from wam_harness.core.types import (
     OptimizationProfile,
     RuntimeInfo,
 )
+from wam_harness.processors.passthrough import PassthroughProcessor
 
 
 def read_events(path):
@@ -38,6 +39,12 @@ def test_runner_writes_trace_with_optimization_profile(tmp_path) -> None:
     assert "inference_end" in event_names
     assert event_names[-1] == "run_end"
     assert events[0]["optimization_profiles"][0]["name"] == "fake_cache"
+    optimization = [
+        event for event in events if event["event"] == "optimization_profile_status"
+    ][0]
+    assert optimization["profiles"][0]["name"] == "fake_cache"
+    assert optimization["profiles"][0]["state"] == "applied"
+    assert optimization["profiles"][0]["hook"] == "fake_backend_latency_model"
     inference_events = [event for event in events if event["event"] == "inference_end"]
     assert inference_events[0]["action_summary"]["shape"] == [3, 4]
     assert inference_events[0]["action_summary"]["finite"] is True
@@ -65,6 +72,7 @@ def test_runner_traces_future_and_value_outputs(tmp_path) -> None:
         "fake",
         lambda manifest, profiles: FutureValueBackend(manifest, profiles),
     )
+    registry.register_processor("passthrough", PassthroughProcessor.from_manifest)
     registry.register_workload("open_loop", lambda manifest: OneStepWorkload())
 
     summary = Runner(registry=registry).run(
@@ -83,6 +91,39 @@ def test_runner_traces_future_and_value_outputs(tmp_path) -> None:
         "artifact_path": "future/frames.json",
     }
     assert inference_end["value"] == {"score": 0.75}
+
+
+def test_runner_invocation_attaches_registry_processor(tmp_path) -> None:
+    registry = Registry()
+    created_backends: list[ProcessorAttachBackend] = []
+    created_processors: list[PassthroughProcessor] = []
+
+    def backend_factory(
+        manifest: Manifest,
+        profiles: list[OptimizationProfile],
+    ) -> ProcessorAttachBackend:
+        backend = ProcessorAttachBackend(manifest, profiles)
+        created_backends.append(backend)
+        return backend
+
+    def processor_factory(manifest: Manifest) -> PassthroughProcessor:
+        processor = PassthroughProcessor.from_manifest(manifest)
+        created_processors.append(processor)
+        return processor
+
+    registry.register_backend("fake", backend_factory)
+    registry.register_processor("passthrough", processor_factory)
+    registry.register_workload("open_loop", lambda manifest: OneStepWorkload())
+
+    Runner(registry=registry).run(
+        "fake-open-loop",
+        trace_dir=tmp_path,
+        episode_length=1,
+        action_horizon=1,
+        replan_steps=1,
+    )
+
+    assert created_backends[0].processor is created_processors[0]
 
 
 class NativeRunBackend:
@@ -220,6 +261,15 @@ class FutureValueBackend:
 
     def close(self) -> None:
         return
+
+
+class ProcessorAttachBackend(FutureValueBackend):
+    def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
+        super().__init__(manifest, profiles)
+        self.processor: object | None = None
+
+    def attach_processor(self, processor: object) -> None:
+        self.processor = processor
 
 
 class OneStepWorkload:

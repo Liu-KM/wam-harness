@@ -9,7 +9,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, ClassVar, TextIO
 
 from wam_harness.backends.native import (
     NativeBackendBase,
@@ -24,7 +24,6 @@ from wam_harness.core.types import (
     OptimizationProfile,
     RuntimeInfo,
 )
-from wam_harness.processors.dreamzero_droid import DreamZeroDroidProcessor
 
 
 class DreamZeroNativeBackendError(NativeBackendError):
@@ -144,10 +143,13 @@ class DreamZeroBackend(NativeBackendBase):
         "typing_extensions",
     )
     model_adapter_name = DreamZeroPolicyServerAdapter.name
+    optimization_hooks: ClassVar[dict[str, str]] = {
+        **NativeBackendBase.optimization_hooks,
+        "dit_cache": "dreamzero_server_dit_cache_arg",
+    }
 
     def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
         super().__init__(manifest, profiles, backend_label="DreamZero")
-        self.processor = DreamZeroDroidProcessor.from_manifest(manifest)
         self.client: Any | None = None
         self.server_process: subprocess.Popen[str] | None = None
         self.server_log_handle: TextIO | None = None

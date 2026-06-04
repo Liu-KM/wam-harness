@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from wam_harness.core.preflight import PreflightReport
+from wam_harness.core.types import OptimizationProfile
 
 
 class RuntimeContractBackend(Protocol):
@@ -15,6 +16,17 @@ class PreflightBackend(Protocol):
 
 class ActionContractBackend(Protocol):
     def action_contract_enabled(self) -> bool: ...
+
+
+class ProcessorAttachBackend(Protocol):
+    def attach_processor(self, processor: object) -> None: ...
+
+
+class OptimizationBackend(Protocol):
+    def apply_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]] | None: ...
 
 
 def runtime_contract_payload(
@@ -58,3 +70,30 @@ def action_contract_enabled(backend: object) -> bool:
     if not callable(method):
         return False
     return bool(method())
+
+
+def attach_processor(backend: object, processor: object | None) -> None:
+    if processor is None:
+        return
+    method = getattr(backend, "attach_processor", None)
+    if callable(method):
+        method(processor)
+
+
+def apply_optimization_profiles(
+    backend: object,
+    profiles: list[OptimizationProfile],
+) -> list[dict[str, object]]:
+    if not profiles:
+        return []
+    method = getattr(backend, "apply_optimization_profiles", None)
+    if not callable(method):
+        return []
+    statuses = method(profiles)
+    if not isinstance(statuses, list):
+        return []
+    normalized: list[dict[str, object]] = []
+    for status in statuses:
+        if isinstance(status, dict):
+            normalized.append(dict(status))
+    return normalized

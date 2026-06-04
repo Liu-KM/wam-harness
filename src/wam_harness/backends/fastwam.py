@@ -23,7 +23,6 @@ from wam_harness.core.types import (
     Manifest,
     OptimizationProfile,
 )
-from wam_harness.processors.fastwam_libero import FastWAMLiberoProcessor
 
 
 class FastWAMNativeBackendError(NativeBackendError):
@@ -296,7 +295,6 @@ class FastWAMBackend(NativeBackendBase):
 
     def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
         super().__init__(manifest, profiles, backend_label="FastWAM")
-        self.processor = FastWAMLiberoProcessor.from_manifest(manifest)
         self.model: Any | None = None
         self.cfg: Any | None = None
         self.checkpoint_path = None
@@ -326,7 +324,14 @@ class FastWAMBackend(NativeBackendBase):
             dataset_stats_path=dataset_stats_path,
         )
 
-        self.processor.bind_runtime(
+        processor = self.native_processor()
+        bind_runtime = getattr(processor, "bind_runtime", None)
+        if not callable(bind_runtime):
+            raise self.error_cls(
+                "FastWAM native backend requires a FastWAM-compatible processor "
+                "attached by the invocation layer before load()."
+            )
+        bind_runtime(
             upstream_processor=runtime.upstream_processor,
             cfg=runtime.cfg,
             device=runtime.device,

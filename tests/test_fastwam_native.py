@@ -114,6 +114,8 @@ def test_fastwam_native_backend_load_binds_runtime_loader_bundle(tmp_path) -> No
     }
     manifest = manifest_from_dict(data)
     backend = registry.create_backend(manifest, [])
+    processor = registry.create_processor(manifest)
+    backend.attach_processor(processor)
     _write_fastwam_required_paths(repo, backend.native_required_upstream_paths())
     runtime_loader = _FakeFastWAMRuntimeLoader()
     backend.runtime_loader = runtime_loader

@@ -15,9 +15,9 @@ The schema is operational: it explains what happened during a run and gives
 - `episode_end`
 - `backend_load_start`
 - `backend_load`
-- `backend_load_end`
 - `backend_warmup`
 - `reset`
+- `optimization_profile_status`
 - `replan_start`
 - `inference_start`
 - `inference_end`
@@ -105,6 +105,14 @@ Backend cleanup is a lifecycle invariant even when no `backend_close` event is
 emitted yet. Future schema revisions may add that event for resident backends
 that need observable server/process shutdown.
 
+When one or more optimization profiles are enabled, the backend lifecycle may
+emit `optimization_profile_status` before `runtime_contract` or backend load.
+This event records each requested profile, whether it is enabled and declared
+supported, its params, target/scope when available, and a runtime state such as
+`applied`, `requested`, `disabled`, or `unsupported_by_manifest`. Backends may
+also include a `hook` for the negotiated runtime hook or a `reason` for
+fallback/requested-only status.
+
 For `serve` mode, startup emits backend load/warmup/reset events before
 `serve_ready`. Each `/infer` request emits `serve_request_start` and
 `serve_request_end` with request timing, output shape, and action summary. Bad
@@ -159,14 +167,14 @@ and keep the harness trace focused on orchestration metadata.
 `wam native-smoke <model-id>` should emit the normal backend lifecycle events:
 
 - `run_start`
+- `optimization_profile_status` when profiles are enabled
 - `runtime_contract`
 - `preflight`
-- `processor_smoke_observation`
 - `backend_load_start`
 - `backend_load`
-- `backend_load_end`
 - `backend_warmup`
 - `reset`
+- `processor_smoke_observation`
 - `inference_start`
 - `inference_end`
 - `run_end`
@@ -191,13 +199,16 @@ and keep the harness trace focused on orchestration metadata.
 - `supported_optimizations`;
 - `optimization_profile_status`, with requested profile name, enabled flag,
   params, whether the profile is declared supported by the model entry, manifest
-  scope, target layer (`native_backend`, `workload`, or `deployment`), and state;
+  scope, target layer (`native_backend`, `workload`, or `deployment`), state,
+  and optional runtime `hook` or fallback `reason`;
 - `deployment`;
 - `backend_config_keys`;
 - `processor_modality` when the registered processor exposes modality limits.
 
-`processor_smoke_observation` should include an `observation_summary`. If
-native readiness is `blocked` before load, the trace should contain
+`processor_smoke_observation` should include an `observation_summary` after the
+backend has loaded, warmed up, and reset. This lets processors that require
+runtime binding generate a realistic smoke observation. If native readiness is
+`blocked` before load, the trace should contain
 `runtime_contract`, `preflight`, an `error` with
 `stage="preflight"` plus `trace_path`, and
 `run_end.status="error"`. In that case `backend_load_start` is intentionally

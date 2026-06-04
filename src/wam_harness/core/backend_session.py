@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from wam_harness.core.backend_capabilities import (
     action_contract_enabled,
+    apply_optimization_profiles,
     preflight_report,
     runtime_contract_payload,
 )
@@ -38,12 +40,37 @@ class BackendSession:
     def runtime_info(self) -> RuntimeInfo:
         return self.backend.runtime_info()
 
-    def start(self, *, require_ready: bool = False) -> None:
+    def start(
+        self,
+        *,
+        require_ready: bool = False,
+        stage_callback: Callable[[str], None] | None = None,
+    ) -> None:
+        self._set_stage(stage_callback, "optimization")
+        self.apply_optimizations()
+        self._set_stage(stage_callback, "runtime_contract")
         self.emit_runtime_contract()
+        self._set_stage(stage_callback, "preflight")
         self.emit_preflight(require_ready=require_ready)
+        self._set_stage(stage_callback, "backend_load")
         self.load_backend()
+        self._set_stage(stage_callback, "backend_warmup")
         self.warmup_backend()
+        self._set_stage(stage_callback, "backend_reset")
         self.reset_backend()
+
+    def _set_stage(
+        self,
+        stage_callback: Callable[[str], None] | None,
+        stage: str,
+    ) -> None:
+        if stage_callback is not None:
+            stage_callback(stage)
+
+    def apply_optimizations(self) -> None:
+        statuses = apply_optimization_profiles(self.backend, self.profiles)
+        if statuses:
+            self.trace.write("optimization_profile_status", profiles=statuses)
 
     def emit_runtime_contract(self) -> None:
         contract = runtime_contract_payload(
@@ -59,20 +86,12 @@ class BackendSession:
             self.trace.write("preflight", **report.to_trace_payload())
         assert_preflight(report, require_ready=require_ready)
 
-    def load_backend(self, *, split_end_event: bool = False) -> None:
+    def load_backend(self) -> None:
         load_start = time.perf_counter()
         self.trace.write("backend_load_start")
         self.backend.load()
         runtime_info = self.backend.runtime_info()
         self.trace.set_runtime_info(runtime_info)
-        if split_end_event:
-            self.trace.write("backend_load", memory=memory_snapshot())
-            self.trace.write(
-                "backend_load_end",
-                timing={"total_ms": (time.perf_counter() - load_start) * 1000},
-                memory=memory_snapshot(),
-            )
-            return
         self.trace.write(
             "backend_load",
             timing={"total_ms": (time.perf_counter() - load_start) * 1000},

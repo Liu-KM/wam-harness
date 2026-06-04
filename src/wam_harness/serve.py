@@ -11,6 +11,7 @@ from typing import Any
 
 from wam_harness.core.action_contract import ActionContractError
 from wam_harness.core.backend_session import BackendSession
+from wam_harness.core.invocation import Invocation
 from wam_harness.core.observation_io import (
     dict_or_empty as _dict_or_empty,
     observation_from_payload as _observation_from_payload,
@@ -18,7 +19,6 @@ from wam_harness.core.observation_io import (
 from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.runtime import SERVE_SPEC
-from wam_harness.core.tracing import TraceWriter
 from wam_harness.core.types import InferenceRequest, OptimizationProfile
 
 
@@ -35,45 +35,32 @@ class ServeApp:
         allow_synthetic_observation: bool = False,
     ) -> None:
         self.registry = registry or default_registry()
-        self.run_id = uuid.uuid4().hex[:12]
-        self.output_dir = (Path(trace_dir) / self.run_id) if trace_dir is not None else Path("runs") / self.run_id
-        self.trace_path = self.output_dir / "trace.jsonl"
-        self.trace: TraceWriter | None = None
         self.closed = False
         self.allow_synthetic_observation = allow_synthetic_observation
-        runtime_plan = self.registry.resolve_runtime(
-            self.registry.load_manifest(model_id),
-            SERVE_SPEC,
+        self.invocation = Invocation.create(
+            registry=self.registry,
+            model_id=model_id,
+            spec=SERVE_SPEC,
+            enabled_opts=enabled_opts,
+            trace_dir=trace_dir,
             upstream_dir=upstream_dir,
             cache_dir=cache_dir,
             backend_overrides=backend_overrides or {},
         )
-        self.manifest = runtime_plan.manifest
-        self.profiles = self.registry.build_optimization_profiles(
-            self.manifest, enabled_opts or []
-        )
-        self.backend = self.registry.create_backend(self.manifest, self.profiles)
-        self.processor = None
-        self.session: BackendSession | None = None
-        self.trace = TraceWriter(self.trace_path, self.run_id, self.backend.runtime_info())
-        self.trace.write(
+        self.run_id = self.invocation.run_id
+        self.output_dir = self.invocation.output_dir
+        self.trace_path = self.invocation.trace_path
+        self.manifest = self.invocation.manifest
+        self.profiles = self.invocation.profiles
+        self.backend = self.invocation.backend
+        self.processor = self.invocation.processor
+        self.session = self.invocation.session
+        self.invocation.write_start(
             "serve_start",
             status="starting",
-            output_dir=str(self.output_dir),
-            optimization_profiles=[profile.to_dict() for profile in self.profiles],
-            manifest_defaults=self.manifest.defaults,
-            known_gaps=self.manifest.known_gaps,
         )
         try:
-            self.processor = self.registry.create_processor(self.manifest)
-            self.session = BackendSession(
-                manifest=self.manifest,
-                profiles=self.profiles,
-                backend=self.backend,
-                processor=self.processor,
-                trace=self.trace,
-            )
-            self.session.start()
+            self.invocation.start_backend()
             self._trace("serve_ready", status="ok")
         except Exception as exc:
             self._trace(
@@ -112,15 +99,9 @@ class ServeApp:
             return
         self.closed = True
         try:
-            if self.session is not None:
-                self.session.close()
-            else:
-                self.backend.close()
+            self._trace("backend_close", trace_path=str(self.trace_path))
         finally:
-            if self.trace is not None:
-                self.trace.write("backend_close", trace_path=str(self.trace_path))
-                self.trace.close()
-                self.trace = None
+            self.invocation.close()
 
     def infer_once(self, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = payload or {}
@@ -200,8 +181,8 @@ class ServeApp:
             raise
 
     def _trace(self, event: str, **payload: Any) -> None:
-        if self.trace is not None:
-            self.trace.write(event, **payload)
+        if not self.invocation.closed:
+            self.invocation.trace.write(event, **payload)
 
     @property
     def session_or_raise(self) -> BackendSession:

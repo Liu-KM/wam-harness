@@ -29,6 +29,18 @@ class RegistryError(LookupError):
     """Raised when a registry key is unknown or incompatible."""
 
 
+class ManifestCatalog(Protocol):
+    def load_manifest(self, model_id: str) -> Manifest: ...
+
+
+@dataclass(frozen=True)
+class BuiltinManifestCatalog:
+    """Catalog backed by the package's built-in Wamfiles."""
+
+    def load_manifest(self, model_id: str) -> Manifest:
+        return load_builtin_manifest(model_id)
+
+
 class Backend(Protocol):
     def load(self) -> None: ...
 
@@ -65,6 +77,7 @@ class Registry:
     workloads: dict[str, WorkloadFactory] = field(default_factory=dict)
     optimization_defaults: dict[str, dict[str, object]] = field(default_factory=dict)
     runtime_resolvers: list[RuntimeResolver] = field(default_factory=list)
+    catalog: ManifestCatalog = field(default_factory=BuiltinManifestCatalog)
 
     def register_backend(self, name: str, factory: BackendFactory) -> None:
         self.backends[name] = factory
@@ -82,7 +95,7 @@ class Registry:
         self.runtime_resolvers.append(resolver)
 
     def load_manifest(self, model_id: str) -> Manifest:
-        return load_builtin_manifest(model_id)
+        return self.catalog.load_manifest(model_id)
 
     def resolve_runtime(
         self,

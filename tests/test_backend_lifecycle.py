@@ -218,7 +218,6 @@ def test_native_smoke_traces_backend_load_failure(tmp_path) -> None:
     ]
     assert [event["event"] for event in events] == [
         "run_start",
-        "processor_smoke_observation",
         "backend_load_start",
         "error",
         "run_end",
@@ -313,13 +312,7 @@ def test_serve_app_closes_backend_when_processor_creation_fails(tmp_path) -> Non
         ServeApp("fake-open-loop", registry=registry, trace_dir=tmp_path)
 
     assert backend.closed is True
-    trace_paths = list(tmp_path.glob("*/trace.jsonl"))
-    assert len(trace_paths) == 1
-    events = [
-        json.loads(line)
-        for line in trace_paths[0].read_text(encoding="utf-8").splitlines()
-    ]
-    assert [event["event"] for event in events] == ["serve_start", "error", "backend_close"]
+    assert list(tmp_path.glob("*/trace.jsonl")) == []
 
 
 def test_http_server_close_closes_backend() -> None:

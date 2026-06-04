@@ -1,4 +1,11 @@
-from wam_harness.core.registry import RegistryError, default_registry
+from wam_harness.core.manifest import load_builtin_manifest
+from wam_harness.core.registry import Registry, RegistryError, default_registry
+
+
+class SingleManifestCatalog:
+    def load_manifest(self, model_id: str):
+        assert model_id == "fake-open-loop"
+        return load_builtin_manifest(model_id)
 
 
 def test_default_registry_resolves_fake_backend_and_workload() -> None:
@@ -27,3 +34,11 @@ def test_registry_rejects_unsupported_optimization() -> None:
         assert "not supported" in str(exc)
     else:
         raise AssertionError("unsupported optimization should fail")
+
+
+def test_registry_uses_injected_manifest_catalog() -> None:
+    registry = Registry(catalog=SingleManifestCatalog())
+
+    manifest = registry.load_manifest("fake-open-loop")
+
+    assert manifest.id == "fake-open-loop"
