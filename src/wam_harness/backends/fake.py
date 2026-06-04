@@ -47,9 +47,29 @@ class FakeBackend:
     def action_contract_enabled(self) -> bool:
         return False
 
+    def plan_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        return self._optimization_profile_statuses(profiles, phase="plan")
+
+    def apply_loaded_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        return self._optimization_profile_statuses(profiles, phase="post_load")
+
     def apply_optimization_profiles(
         self,
         profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        return self.plan_optimization_profiles(profiles)
+
+    def _optimization_profile_statuses(
+        self,
+        profiles: list[OptimizationProfile],
+        *,
+        phase: str,
     ) -> list[dict[str, object]]:
         statuses: list[dict[str, object]] = []
         supported = set(self.manifest.supported_optimizations)
@@ -63,11 +83,19 @@ class FakeBackend:
             elif not profile.enabled:
                 state = "disabled"
             elif profile.name == "fake_cache":
-                state = "applied"
                 hook = "fake_backend_latency_model"
+                if phase == "post_load":
+                    state = "applied" if self.loaded else "fallback"
+                    reason = None if self.loaded else "backend_not_loaded"
+                else:
+                    state = "planned"
             elif profile.name == "action_chunk_scheduling":
-                state = "applied"
                 hook = "open_loop_replan_schedule"
+                if phase == "post_load":
+                    state = "applied" if self.loaded else "fallback"
+                    reason = None if self.loaded else "backend_not_loaded"
+                else:
+                    state = "planned"
             else:
                 reason = "no_fake_backend_hook"
             status = {

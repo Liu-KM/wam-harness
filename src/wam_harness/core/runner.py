@@ -89,7 +89,6 @@ class Runner:
             trace_dir=trace_dir,
         )
         manifest = invocation.manifest
-        workload = self._create_workload(manifest, observation, invocation.processor)
 
         defaults = manifest.defaults
         effective_action_horizon = int(
@@ -98,8 +97,6 @@ class Runner:
         effective_replan_steps = int(
             replan_steps or defaults.get("replan_steps") or effective_action_horizon
         )
-        if episode_length is not None:
-            workload.episode_length = episode_length
 
         pending_actions: list[list[float]] = []
         model_calls = 0
@@ -117,6 +114,13 @@ class Runner:
                 synthetic_observation=manifest.workload_name == "processor_smoke",
             )
             try:
+                workload = self._create_workload(
+                    manifest,
+                    observation,
+                    invocation.processor,
+                )
+                if episode_length is not None:
+                    workload.episode_length = episode_length
                 invocation.start_backend()
                 runtime_info = session.runtime_info
                 workload.reset()
@@ -185,34 +189,29 @@ class Runner:
                     )
 
                 trace.write("episode_end", episode_id=workload.episode_id, steps=steps)
-                trace.write(
+                invocation.write_finish(
                     "run_end",
                     status="ok",
                     model_calls=model_calls,
                     steps=steps,
                     warnings=[],
-                    trace_path=str(invocation.trace_path),
                 )
             except Exception as exc:
-                trace.write(
-                    "error",
+                invocation.write_error(
+                    exc=exc,
                     stage="preflight"
                     if isinstance(exc, PreflightError)
                     else "action_contract"
                     if isinstance(exc, ActionContractError)
                     else "runner",
-                    error_type=type(exc).__name__,
-                    message=str(exc),
                     recoverable=isinstance(exc, PreflightError),
-                    backend=manifest.backend_name,
                 )
-                trace.write(
+                invocation.write_finish(
                     "run_end",
                     status="error",
                     model_calls=model_calls,
                     steps=steps,
                     warnings=[str(exc)],
-                    trace_path=str(invocation.trace_path),
                 )
                 raise
 

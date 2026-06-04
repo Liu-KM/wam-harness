@@ -22,8 +22,15 @@ class ProcessorAttachBackend(Protocol):
     def attach_processor(self, processor: object) -> None: ...
 
 
-class OptimizationBackend(Protocol):
-    def apply_optimization_profiles(
+class OptimizationPlanBackend(Protocol):
+    def plan_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]] | None: ...
+
+
+class OptimizationApplyBackend(Protocol):
+    def apply_loaded_optimization_profiles(
         self,
         profiles: list[OptimizationProfile],
     ) -> list[dict[str, object]] | None: ...
@@ -80,13 +87,33 @@ def attach_processor(backend: object, processor: object | None) -> None:
         method(processor)
 
 
-def apply_optimization_profiles(
+def plan_optimization_profiles(
     backend: object,
     profiles: list[OptimizationProfile],
 ) -> list[dict[str, object]]:
+    return _optimization_statuses(backend, profiles, method_name="plan_optimization_profiles")
+
+
+def apply_loaded_optimization_profiles(
+    backend: object,
+    profiles: list[OptimizationProfile],
+) -> list[dict[str, object]]:
+    return _optimization_statuses(
+        backend,
+        profiles,
+        method_name="apply_loaded_optimization_profiles",
+    )
+
+
+def _optimization_statuses(
+    backend: object,
+    profiles: list[OptimizationProfile],
+    *,
+    method_name: str,
+) -> list[dict[str, object]]:
     if not profiles:
         return []
-    method = getattr(backend, "apply_optimization_profiles", None)
+    method = getattr(backend, method_name, None)
     if not callable(method):
         return []
     statuses = method(profiles)

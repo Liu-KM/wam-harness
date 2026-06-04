@@ -5,7 +5,9 @@ import json
 import pytest
 
 from wam_harness.backends.native_support.smoke import NativeSmokeRunner
+from wam_harness.core.invocation import Invocation
 from wam_harness.core.registry import Registry, RegistryError
+from wam_harness.core.runtime import RUN_SPEC
 from wam_harness.core.runner import Runner
 from wam_harness.core.types import (
     ActionChunk,
@@ -85,6 +87,11 @@ class TrackingBackend:
 
     def close(self) -> None:
         self.closed = True
+
+
+class AttachFailBackend(TrackingBackend):
+    def attach_processor(self, processor: object) -> None:
+        raise RuntimeError("attach failed")
 
 
 class SmokeOnlyProcessor:
@@ -175,6 +182,58 @@ def test_runner_traces_backend_load_failure(tmp_path) -> None:
         "error",
         "run_end",
     ]
+    assert events[-1]["status"] == "error"
+
+
+def test_invocation_closes_backend_when_assembly_fails(tmp_path) -> None:
+    backend = AttachFailBackend.__new__(AttachFailBackend)
+    registry, created = _fake_registry()
+
+    def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> AttachFailBackend:
+        AttachFailBackend.__init__(backend, manifest, profiles)
+        created.append(backend)
+        return backend
+
+    registry.register_backend("fake", factory)
+    manifest = registry.load_manifest("fake-open-loop")
+    runtime_plan = registry.resolve_runtime(manifest, RUN_SPEC)
+
+    with pytest.raises(RuntimeError, match="attach failed"):
+        Invocation.from_runtime_plan(
+            registry=registry,
+            model_id="fake-open-loop",
+            runtime_plan=runtime_plan,
+            trace_dir=tmp_path,
+        )
+
+    assert created[0].closed is True
+    assert list(tmp_path.glob("*/trace.jsonl")) == []
+
+
+def test_runner_closes_backend_when_workload_creation_fails(tmp_path) -> None:
+    registry, created = _fake_registry()
+    registry.workloads.clear()
+
+    with pytest.raises(RegistryError, match="unknown workload"):
+        Runner(registry=registry).run(
+            "fake-open-loop",
+            trace_dir=tmp_path,
+            episode_length=1,
+        )
+
+    assert created[0].closed is True
+    trace_paths = list(tmp_path.glob("*/trace.jsonl"))
+    assert len(trace_paths) == 1
+    events = [
+        json.loads(line)
+        for line in trace_paths[0].read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["event"] for event in events] == [
+        "run_start",
+        "error",
+        "run_end",
+    ]
+    assert events[-2]["stage"] == "runner"
     assert events[-1]["status"] == "error"
 
 

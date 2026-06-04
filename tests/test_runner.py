@@ -39,12 +39,16 @@ def test_runner_writes_trace_with_optimization_profile(tmp_path) -> None:
     assert "inference_end" in event_names
     assert event_names[-1] == "run_end"
     assert events[0]["optimization_profiles"][0]["name"] == "fake_cache"
-    optimization = [
+    optimizations = [
         event for event in events if event["event"] == "optimization_profile_status"
-    ][0]
-    assert optimization["profiles"][0]["name"] == "fake_cache"
-    assert optimization["profiles"][0]["state"] == "applied"
-    assert optimization["profiles"][0]["hook"] == "fake_backend_latency_model"
+    ]
+    assert [event["stage"] for event in optimizations] == ["plan", "post_load"]
+    assert optimizations[0]["profiles"][0]["name"] == "fake_cache"
+    assert optimizations[0]["profiles"][0]["state"] == "planned"
+    assert optimizations[0]["profiles"][0]["hook"] == "fake_backend_latency_model"
+    assert optimizations[1]["profiles"][0]["name"] == "fake_cache"
+    assert optimizations[1]["profiles"][0]["state"] == "applied"
+    assert optimizations[1]["profiles"][0]["hook"] == "fake_backend_latency_model"
     inference_events = [event for event in events if event["event"] == "inference_end"]
     assert inference_events[0]["action_summary"]["shape"] == [3, 4]
     assert inference_events[0]["action_summary"]["finite"] is True

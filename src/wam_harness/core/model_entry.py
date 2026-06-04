@@ -13,14 +13,13 @@ from wam_harness.core._utils import (
 )
 from wam_harness.core.assets import AssetDownloader, AssetError, HuggingFaceAssetDownloader
 from wam_harness.core.backend_capabilities import preflight_report
-from wam_harness.core.manifest import list_builtin_manifest_ids, load_builtin_manifest
+from wam_harness.core.registry import Registry, RegistryError, default_registry
+from wam_harness.core.runtime import DOCTOR_SPEC, PREPARE_SPEC
+from wam_harness.core.types import Manifest
 from wam_harness.model_entry_labels import (
     model_deployment_label,
     model_runtime_label,
 )
-from wam_harness.core.registry import RegistryError, default_registry
-from wam_harness.core.runtime import DOCTOR_SPEC, PREPARE_SPEC
-from wam_harness.core.types import Manifest
 
 
 @dataclass(frozen=True)
@@ -88,15 +87,25 @@ class DoctorSummary:
         }
 
 
-def load_model_entries() -> list[Manifest]:
-    return [load_builtin_manifest(model_id) for model_id in list_builtin_manifest_ids()]
+def load_model_entry(model_id: str, registry: Registry | None = None) -> Manifest:
+    return _registry_or_default(registry).load_manifest(model_id)
+
+
+def load_model_entries(registry: Registry | None = None) -> list[Manifest]:
+    model_registry = _registry_or_default(registry)
+    return [
+        model_registry.load_manifest(model_id)
+        for model_id in model_registry.list_model_ids()
+    ]
 
 
 def doctor_model_entry(
     model_id: str | None = None,
     cache_dir: str | Path | None = None,
     upstream_dir: str | Path | None = None,
+    registry: Registry | None = None,
 ) -> DoctorSummary:
+    model_registry = _registry_or_default(registry)
     cache = Path(cache_dir) if cache_dir is not None else default_cache_dir()
     cache_status = _cache_check_label(cache)
     runtime_setup = "not modified"
@@ -109,14 +118,14 @@ def doctor_model_entry(
             status=status,
         )
 
-    entry = load_builtin_manifest(model_id)
+    entry = model_registry.load_manifest(model_id)
     gpu_status = None
     if _requires_cuda(entry):
         gpu_status = "found" if _gpu_visible() else "missing"
         if gpu_status == "missing":
             status = "warning"
 
-    assets = asset_statuses(entry, cache)
+    assets = asset_statuses(entry, cache, registry=model_registry)
     if any(asset.status == "missing" for asset in assets):
         status = "warning"
 
@@ -124,6 +133,7 @@ def doctor_model_entry(
         entry,
         cache_dir=cache,
         upstream_dir=upstream_dir,
+        registry=model_registry,
     )
     if backend_status == "blocked":
         status = "blocked"
@@ -152,11 +162,13 @@ def prepare_model_entry(
     download: bool = False,
     selected_assets: list[str] | None = None,
     downloader: AssetDownloader | None = None,
+    registry: Registry | None = None,
 ) -> PrepareSummary:
+    model_registry = _registry_or_default(registry)
     cache = Path(cache_dir) if cache_dir is not None else default_cache_dir()
     cache.mkdir(parents=True, exist_ok=True)
 
-    entry = load_builtin_manifest(model_id)
+    entry = model_registry.load_manifest(model_id)
     selected = _validate_selected_assets(entry, selected_assets)
     downloaded_assets: set[str] = set()
     asset_messages: dict[str, str] = {}
@@ -172,6 +184,7 @@ def prepare_model_entry(
         cache,
         downloaded_assets=downloaded_assets,
         messages=asset_messages,
+        registry=model_registry,
     )
     scoped_assets = [asset for asset in assets if selected is None or asset.name in selected]
     status = "ok"
@@ -193,11 +206,12 @@ def asset_statuses(
     *,
     downloaded_assets: set[str] | None = None,
     messages: dict[str, str] | None = None,
+    registry: Registry | None = None,
 ) -> list[AssetStatus]:
     statuses: list[AssetStatus] = []
     downloaded = downloaded_assets or set()
     asset_messages = messages or {}
-    backend_roles = _backend_asset_roles(entry, cache_dir)
+    backend_roles = _backend_asset_roles(entry, cache_dir, registry=registry)
     for name, raw in entry.assets.items():
         if not isinstance(raw, dict):
             continue
@@ -288,15 +302,21 @@ def _expected_asset_path(local_path: object, cache_dir: Path) -> Path | None:
     return cache_dir / path
 
 
-def _backend_asset_roles(entry: Manifest, cache_dir: Path) -> dict[str, set[str]]:
+def _backend_asset_roles(
+    entry: Manifest,
+    cache_dir: Path,
+    *,
+    registry: Registry | None = None,
+) -> dict[str, set[str]]:
     roles: dict[str, set[str]] = {"required": set(), "runtime": set()}
+    model_registry = _registry_or_default(registry)
     try:
-        manifest = default_registry().resolve_runtime(
+        manifest = model_registry.resolve_runtime(
             entry,
             PREPARE_SPEC,
             cache_dir=cache_dir,
         ).manifest
-        backend = default_registry().create_backend(manifest, [])
+        backend = model_registry.create_backend(manifest, [])
     except (RegistryError, RuntimeError, ValueError):
         return roles
     requirements = _backend_requirements(backend)
@@ -312,15 +332,17 @@ def _backend_doctor_lines(
     *,
     cache_dir: str | Path | None = None,
     upstream_dir: str | Path | None = None,
+    registry: Registry | None = None,
 ) -> tuple[list[str], str, dict[str, object] | None]:
+    model_registry = _registry_or_default(registry)
     try:
-        manifest = default_registry().resolve_runtime(
+        manifest = model_registry.resolve_runtime(
             entry,
             DOCTOR_SPEC,
             cache_dir=cache_dir,
             upstream_dir=upstream_dir,
         ).manifest
-        backend = default_registry().create_backend(manifest, [])
+        backend = model_registry.create_backend(manifest, [])
     except (RegistryError, RuntimeError, ValueError) as exc:
         return (
             [f"Backend requirements: unavailable ({exc})"],
@@ -499,3 +521,7 @@ def _cache_check_label(path: Path) -> str:
     while not parent.exists() and parent != parent.parent:
         parent = parent.parent
     return "creatable" if os.access(parent, os.W_OK) else "not creatable"
+
+
+def _registry_or_default(registry: Registry | None) -> Registry:
+    return registry or default_registry()

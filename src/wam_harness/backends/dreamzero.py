@@ -147,6 +147,9 @@ class DreamZeroBackend(NativeBackendBase):
         **NativeBackendBase.optimization_hooks,
         "dit_cache": "dreamzero_server_dit_cache_arg",
     }
+    loaded_optimization_hooks: ClassVar[dict[str, str]] = {
+        "dit_cache": "dreamzero_server_dit_cache_arg",
+    }
 
     def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
         super().__init__(manifest, profiles, backend_label="DreamZero")

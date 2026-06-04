@@ -106,12 +106,15 @@ emitted yet. Future schema revisions may add that event for resident backends
 that need observable server/process shutdown.
 
 When one or more optimization profiles are enabled, the backend lifecycle may
-emit `optimization_profile_status` before `runtime_contract` or backend load.
-This event records each requested profile, whether it is enabled and declared
-supported, its params, target/scope when available, and a runtime state such as
-`applied`, `requested`, `disabled`, or `unsupported_by_manifest`. Backends may
-also include a `hook` for the negotiated runtime hook or a `reason` for
-fallback/requested-only status.
+emit `optimization_profile_status` twice: once with `stage="plan"` before
+`runtime_contract` or backend load, and once with `stage="post_load"` after the
+backend has loaded. The plan event records each requested profile, whether it is
+enabled and declared supported, its params, target/scope when available, and a
+runtime state such as `requested`, `planned`, `disabled`, or
+`unsupported_by_manifest`. Only the post-load event should report `applied`, and
+only when the backend has actually applied the hook to the loaded runtime.
+Backends may report `fallback` with a `reason` when a planned profile cannot be
+activated.
 
 For `serve` mode, startup emits backend load/warmup/reset events before
 `serve_ready`. Each `/infer` request emits `serve_request_start` and
@@ -200,7 +203,8 @@ and keep the harness trace focused on orchestration metadata.
 - `optimization_profile_status`, with requested profile name, enabled flag,
   params, whether the profile is declared supported by the model entry, manifest
   scope, target layer (`native_backend`, `workload`, or `deployment`), state,
-  and optional runtime `hook` or fallback `reason`;
+  and optional runtime `hook` or fallback `reason`; pre-load contracts should
+  use `requested` or `planned`, not `applied`;
 - `deployment`;
 - `backend_config_keys`;
 - `processor_modality` when the registered processor exposes modality limits.

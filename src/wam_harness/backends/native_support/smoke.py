@@ -157,36 +157,31 @@ class NativeSmokeRunner:
                     result.action_chunk.action_dim,
                 ]
                 warnings.extend(result.warnings)
-                trace.write(
+                invocation.write_finish(
                     "run_end",
                     status="ok",
                     model_calls=1,
                     steps=0,
                     warnings=warnings,
-                    trace_path=str(invocation.trace_path),
                 )
             except Exception as exc:
                 setattr(exc, "trace_path", invocation.trace_path)
-                trace.write(
-                    "error",
+                invocation.write_error(
+                    exc=exc,
                     stage="preflight"
                     if isinstance(exc, PreflightError)
                     else "action_contract"
                     if isinstance(exc, ActionContractError)
                     else stage,
-                    error_type=type(exc).__name__,
-                    message=str(exc),
                     recoverable=isinstance(exc, PreflightError),
-                    backend=manifest.backend_name,
                     trace_path=str(invocation.trace_path),
                 )
-                trace.write(
+                invocation.write_finish(
                     "run_end",
                     status="error",
                     model_calls=0,
                     steps=0,
                     warnings=[str(exc)],
-                    trace_path=str(invocation.trace_path),
                 )
                 raise
 

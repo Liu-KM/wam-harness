@@ -63,15 +63,12 @@ class ServeApp:
             self.invocation.start_backend()
             self._trace("serve_ready", status="ok")
         except Exception as exc:
-            self._trace(
-                "error",
+            self.invocation.write_error(
+                exc=exc,
                 stage="preflight"
                 if isinstance(exc, PreflightError)
                 else "serve_start",
-                error_type=type(exc).__name__,
-                message=str(exc),
                 recoverable=isinstance(exc, PreflightError),
-                backend=self.manifest.backend_name,
             )
             self.close()
             raise
@@ -99,7 +96,8 @@ class ServeApp:
             return
         self.closed = True
         try:
-            self._trace("backend_close", trace_path=str(self.trace_path))
+            if not self.invocation.closed:
+                self.invocation.write_backend_close()
         finally:
             self.invocation.close()
 
@@ -159,17 +157,14 @@ class ServeApp:
             )
             return result.to_dict()
         except Exception as exc:
-            self._trace(
-                "error",
+            self.invocation.write_error(
+                exc=exc,
                 stage="action_contract"
                 if isinstance(exc, ActionContractError)
                 else "serve_request",
                 request_id=request_id,
-                error_type=type(exc).__name__,
-                message=str(exc),
                 recoverable=isinstance(exc, ValueError)
                 and not isinstance(exc, ActionContractError),
-                backend=self.manifest.backend_name,
             )
             self._trace(
                 "serve_request_end",

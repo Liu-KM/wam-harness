@@ -80,26 +80,30 @@ class Invocation:
         manifest = runtime_plan.manifest
         profiles = registry.build_optimization_profiles(manifest, enabled_opts or [])
         backend = registry.create_backend(manifest, profiles)
+        trace: TraceWriter | None = None
         try:
             processor = registry.create_processor(manifest)
+            attach_processor(backend, processor)
+
+            run_id = uuid.uuid4().hex[:12]
+            output_dir = (
+                Path(trace_dir) / run_id if trace_dir is not None else Path("runs") / run_id
+            )
+            trace_path = output_dir / "trace.jsonl"
+            trace = TraceWriter(trace_path, run_id, backend.runtime_info())
+            session = BackendSession(
+                manifest=manifest,
+                profiles=profiles,
+                backend=backend,
+                processor=processor,
+                trace=trace,
+            )
         except Exception:
+            if trace is not None:
+                trace.close()
             backend.close()
             raise
-        attach_processor(backend, processor)
 
-        run_id = uuid.uuid4().hex[:12]
-        output_dir = (
-            Path(trace_dir) / run_id if trace_dir is not None else Path("runs") / run_id
-        )
-        trace_path = output_dir / "trace.jsonl"
-        trace = TraceWriter(trace_path, run_id, backend.runtime_info())
-        session = BackendSession(
-            manifest=manifest,
-            profiles=profiles,
-            backend=backend,
-            processor=processor,
-            trace=trace,
-        )
         return cls(
             model_id=model_id,
             runtime_plan=runtime_plan,
@@ -127,6 +131,35 @@ class Invocation:
             known_gaps=self.manifest.known_gaps,
             **payload,
         )
+
+    def write_error(
+        self,
+        *,
+        exc: Exception,
+        stage: str,
+        recoverable: bool = False,
+        **payload: Any,
+    ) -> None:
+        self.trace.write(
+            "error",
+            stage=stage,
+            error_type=type(exc).__name__,
+            message=str(exc),
+            recoverable=recoverable,
+            backend=self.manifest.backend_name,
+            **payload,
+        )
+
+    def write_finish(self, event: str, *, status: str, **payload: Any) -> None:
+        self.trace.write(
+            event,
+            status=status,
+            trace_path=str(self.trace_path),
+            **payload,
+        )
+
+    def write_backend_close(self) -> None:
+        self.trace.write("backend_close", trace_path=str(self.trace_path))
 
     def start_backend(
         self,

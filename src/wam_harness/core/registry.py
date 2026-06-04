@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from wam_harness.core.manifest import load_builtin_manifest
+from wam_harness.core.manifest import list_builtin_manifest_ids, load_builtin_manifest
 from wam_harness.core.runtime import (
     RuntimeOptions,
     RuntimePlan,
@@ -32,6 +32,8 @@ class RegistryError(LookupError):
 class ManifestCatalog(Protocol):
     def load_manifest(self, model_id: str) -> Manifest: ...
 
+    def list_model_ids(self) -> list[str]: ...
+
 
 @dataclass(frozen=True)
 class BuiltinManifestCatalog:
@@ -39,6 +41,9 @@ class BuiltinManifestCatalog:
 
     def load_manifest(self, model_id: str) -> Manifest:
         return load_builtin_manifest(model_id)
+
+    def list_model_ids(self) -> list[str]:
+        return list_builtin_manifest_ids()
 
 
 class Backend(Protocol):
@@ -96,6 +101,9 @@ class Registry:
 
     def load_manifest(self, model_id: str) -> Manifest:
         return self.catalog.load_manifest(model_id)
+
+    def list_model_ids(self) -> list[str]:
+        return self.catalog.list_model_ids()
 
     def resolve_runtime(
         self,

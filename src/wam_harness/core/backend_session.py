@@ -7,7 +7,8 @@ from typing import Any
 
 from wam_harness.core.backend_capabilities import (
     action_contract_enabled,
-    apply_optimization_profiles,
+    apply_loaded_optimization_profiles,
+    plan_optimization_profiles,
     preflight_report,
     runtime_contract_payload,
 )
@@ -46,14 +47,16 @@ class BackendSession:
         require_ready: bool = False,
         stage_callback: Callable[[str], None] | None = None,
     ) -> None:
-        self._set_stage(stage_callback, "optimization")
-        self.apply_optimizations()
+        self._set_stage(stage_callback, "optimization_plan")
+        self.plan_optimizations()
         self._set_stage(stage_callback, "runtime_contract")
         self.emit_runtime_contract()
         self._set_stage(stage_callback, "preflight")
         self.emit_preflight(require_ready=require_ready)
         self._set_stage(stage_callback, "backend_load")
         self.load_backend()
+        self._set_stage(stage_callback, "optimization_apply")
+        self.apply_loaded_optimizations()
         self._set_stage(stage_callback, "backend_warmup")
         self.warmup_backend()
         self._set_stage(stage_callback, "backend_reset")
@@ -67,10 +70,25 @@ class BackendSession:
         if stage_callback is not None:
             stage_callback(stage)
 
-    def apply_optimizations(self) -> None:
-        statuses = apply_optimization_profiles(self.backend, self.profiles)
+    def plan_optimizations(self) -> None:
+        statuses = plan_optimization_profiles(self.backend, self.profiles)
         if statuses:
-            self.trace.write("optimization_profile_status", profiles=statuses)
+            self.trace.set_runtime_info(self.backend.runtime_info())
+            self.trace.write(
+                "optimization_profile_status",
+                stage="plan",
+                profiles=statuses,
+            )
+
+    def apply_loaded_optimizations(self) -> None:
+        statuses = apply_loaded_optimization_profiles(self.backend, self.profiles)
+        if statuses:
+            self.trace.set_runtime_info(self.backend.runtime_info())
+            self.trace.write(
+                "optimization_profile_status",
+                stage="post_load",
+                profiles=statuses,
+            )
 
     def emit_runtime_contract(self) -> None:
         contract = runtime_contract_payload(

@@ -7,6 +7,9 @@ class SingleManifestCatalog:
         assert model_id == "fake-open-loop"
         return load_builtin_manifest(model_id)
 
+    def list_model_ids(self) -> list[str]:
+        return ["fake-open-loop"]
+
 
 def test_default_registry_resolves_fake_backend_and_workload() -> None:
     registry = default_registry()
@@ -42,3 +45,4 @@ def test_registry_uses_injected_manifest_catalog() -> None:
     manifest = registry.load_manifest("fake-open-loop")
 
     assert manifest.id == "fake-open-loop"
+    assert registry.list_model_ids() == ["fake-open-loop"]

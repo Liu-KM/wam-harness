@@ -206,6 +206,10 @@ class CosmosPolicyBackend(NativeBackendBase):
         "jpeg_observation_compression": "preprocess_jpeg_compression",
         "parallel_inference": "cosmos_parallel_inference",
     }
+    loaded_optimization_hooks: ClassVar[dict[str, str]] = {
+        "jpeg_observation_compression": "preprocess_jpeg_compression",
+        "parallel_inference": "cosmos_parallel_inference",
+    }
 
     def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
         super().__init__(manifest, profiles, backend_label="Cosmos-Policy")

@@ -560,7 +560,7 @@ def test_native_backend_runtime_info_records_optimization_plan(tmp_path) -> None
     profiles = registry.build_optimization_profiles(manifest, ["action_chunk_scheduling"])
     backend = registry.create_backend(manifest, profiles)
 
-    statuses = backend.apply_optimization_profiles(profiles)
+    statuses = backend.plan_optimization_profiles(profiles)
     plan = backend.runtime_info().metadata["native_optimization_plan"]
 
     assert statuses == [
@@ -571,7 +571,7 @@ def test_native_backend_runtime_info_records_optimization_plan(tmp_path) -> None
             "declared_supported": True,
             "scope": "simulator_eval",
             "target": "workload",
-            "state": "applied",
+            "state": "planned",
             "hook": "action_chunk_contract",
         }
     ]
@@ -583,10 +583,33 @@ def test_native_backend_runtime_info_records_optimization_plan(tmp_path) -> None
             "declared_supported": True,
             "scope": "simulator_eval",
             "target": "workload",
-            "state": "applied",
+            "state": "planned",
             "hook": "action_chunk_contract",
         }
     ]
+    loaded_statuses = backend.apply_loaded_optimization_profiles(profiles)
+    assert loaded_statuses == plan
+
+
+def test_native_loaded_optimization_status_requires_loaded_backend(tmp_path) -> None:
+    registry = default_registry()
+    manifest = _native_manifest("cosmos-policy-libero", "cosmos_policy", tmp_path)
+    profiles = registry.build_optimization_profiles(
+        manifest,
+        ["jpeg_observation_compression"],
+    )
+    backend = registry.create_backend(manifest, profiles)
+
+    planned = backend.plan_optimization_profiles(profiles)
+    fallback = backend.apply_loaded_optimization_profiles(profiles)
+    backend.loaded = True
+    applied = backend.apply_loaded_optimization_profiles(profiles)
+
+    assert planned[0]["state"] == "planned"
+    assert fallback[0]["state"] == "fallback"
+    assert fallback[0]["reason"] == "backend_not_loaded"
+    assert applied[0]["state"] == "applied"
+    assert applied[0]["hook"] == "preprocess_jpeg_compression"
 
 
 def test_native_backend_base_wraps_processor_model_call_with_trace_metadata() -> None:

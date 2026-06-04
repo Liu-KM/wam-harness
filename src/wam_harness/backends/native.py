@@ -247,6 +247,7 @@ class NativeBackendBase:
     optimization_hooks: ClassVar[dict[str, str]] = {
         "action_chunk_scheduling": "action_chunk_contract",
     }
+    loaded_optimization_hooks: ClassVar[dict[str, str]] = {}
 
     def __init__(
         self,
@@ -346,12 +347,12 @@ class NativeBackendBase:
     def attach_processor(self, processor: object) -> None:
         self.processor = processor  # type: ignore[assignment]
 
-    def apply_optimization_profiles(
+    def plan_optimization_profiles(
         self,
         profiles: list[OptimizationProfile],
     ) -> list[dict[str, object]]:
         self.optimization_statuses = {
-            profile.name: self._apply_optimization_profile(profile)
+            profile.name: self._plan_optimization_profile(profile)
             for profile in profiles
         }
         return native_optimization_status_dicts(
@@ -359,6 +360,31 @@ class NativeBackendBase:
             profiles,
             applied_statuses=self.optimization_status_overrides(),
         )
+
+    def apply_loaded_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        self.optimization_statuses.update(
+            {
+                profile.name: self._apply_loaded_optimization_profile(
+                    profile,
+                    self.optimization_statuses.get(profile.name),
+                )
+                for profile in profiles
+            }
+        )
+        return native_optimization_status_dicts(
+            self.manifest,
+            profiles,
+            applied_statuses=self.optimization_status_overrides(),
+        )
+
+    def apply_optimization_profiles(
+        self,
+        profiles: list[OptimizationProfile],
+    ) -> list[dict[str, object]]:
+        return self.plan_optimization_profiles(profiles)
 
     def optimization_status_overrides(self) -> dict[str, dict[str, object]]:
         return dict(self.optimization_statuses)
@@ -397,6 +423,9 @@ class NativeBackendBase:
 
     def native_optimization_hooks(self) -> dict[str, str]:
         return dict(self.optimization_hooks)
+
+    def native_loaded_optimization_hooks(self) -> dict[str, str]:
+        return dict(self.loaded_optimization_hooks)
 
     def infer(self, request: InferenceRequest) -> InferenceResult:
         """Run one native product inference through the shared harness spine."""
@@ -811,7 +840,7 @@ class NativeBackendBase:
         settings.update(self.profile_params(name))
         return settings
 
-    def _apply_optimization_profile(
+    def _plan_optimization_profile(
         self,
         profile: OptimizationProfile,
     ) -> dict[str, object]:
@@ -825,12 +854,35 @@ class NativeBackendBase:
 
         hook = self.native_optimization_hooks().get(profile.name)
         if hook is not None:
-            return {"state": "applied", "hook": hook}
+            return {"state": "planned", "hook": hook}
 
         return {
             "state": "requested",
             "reason": "no_backend_hook",
         }
+
+    def _apply_loaded_optimization_profile(
+        self,
+        profile: OptimizationProfile,
+        planned_status: dict[str, object] | None,
+    ) -> dict[str, object]:
+        status = dict(planned_status or self._plan_optimization_profile(profile))
+        if status.get("state") in {"disabled", "unsupported_by_manifest"}:
+            return status
+
+        loaded_hook = self.native_loaded_optimization_hooks().get(profile.name)
+        if loaded_hook is None:
+            return status
+
+        status["hook"] = loaded_hook
+        if not self.loaded:
+            status["state"] = "fallback"
+            status["reason"] = "backend_not_loaded"
+            return status
+
+        status["state"] = "applied"
+        status.pop("reason", None)
+        return status
 
     def upstream_config(self) -> dict[str, Any]:
         upstream = self.manifest.eval.get("upstream", {})

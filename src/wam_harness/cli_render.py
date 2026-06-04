@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from wam_harness.core._utils import csv_text, format_size
-from wam_harness.core.manifest import load_builtin_manifest
 from wam_harness.core.model_entry import (
     AssetStatus,
     DoctorSummary,
     PrepareSummary,
+    load_model_entry,
     load_model_entries,
 )
 from wam_harness.model_entry_labels import (
@@ -34,7 +34,7 @@ def render_model_list() -> str:
 
 
 def render_model_info(model_id: str) -> str:
-    entry = load_builtin_manifest(model_id)
+    entry = load_model_entry(model_id)
     source = entry.source_repo or "unknown"
     lines = [
         f"Model: {entry.id}",
