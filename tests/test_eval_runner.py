@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from wam_harness.cli import main
 from wam_harness.core.eval_runner import EvalRunner, EvalRunnerError
 from wam_harness.core.manifest import load_builtin_manifest
@@ -131,6 +133,38 @@ def test_eval_runner_rejects_unknown_fastwam_eval_workload(tmp_path) -> None:
         assert "libero-single-task" in str(exc)
     else:
         raise AssertionError("expected EvalRunnerError")
+
+
+def test_eval_runner_traces_execution_validation_failure(tmp_path) -> None:
+    with pytest.raises(EvalRunnerError, match="external eval workdir does not exist"):
+        EvalRunner().run(
+            model_id="fastwam-libero",
+            trace_dir=tmp_path,
+            cache_dir=tmp_path / "cache",
+            upstream_dir=tmp_path / "missing-fastwam",
+            dry_run=False,
+            overrides={"create_only": "True"},
+        )
+
+    trace_paths = list(tmp_path.glob("*/trace.jsonl"))
+    assert len(trace_paths) == 1
+    events = [
+        json.loads(line)
+        for line in trace_paths[0].read_text(encoding="utf-8").splitlines()
+    ]
+
+    assert [event["event"] for event in events] == [
+        "run_start",
+        "external_eval_plan",
+        "error",
+        "run_end",
+    ]
+    assert events[-2]["stage"] == "external_eval_validation"
+    assert events[-2]["recoverable"] is True
+    assert events[-2]["backend"] == "external_eval"
+    assert events[-1]["status"] == "error"
+    assert events[-1]["return_code"] is None
+    assert events[-1]["trace_path"] == str(trace_paths[0])
 
 
 def test_eval_runner_profile_context_dreamzero_dit_cache(tmp_path) -> None:

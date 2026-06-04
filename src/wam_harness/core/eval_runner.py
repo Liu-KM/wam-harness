@@ -160,24 +160,48 @@ class EvalRunner:
                     runtime_info=runtime_info,
                 )
 
-            self._validate_execution(manifest, command)
-            trace.write("backend_load", memory=memory_snapshot())
-            output_dir.mkdir(parents=True, exist_ok=True)
+            stage = "external_eval_validation"
+            try:
+                self._validate_execution(manifest, command)
+                stage = "external_eval_execution"
+                trace.write("backend_load", memory=memory_snapshot())
+                output_dir.mkdir(parents=True, exist_ok=True)
 
-            env = os.environ.copy()
-            env.update(command.env)
-            start = time.perf_counter()
-            with stdout_path.open("w", encoding="utf-8") as stdout:
-                with stderr_path.open("w", encoding="utf-8") as stderr:
-                    process = subprocess.run(
-                        command.argv,
-                        cwd=command.workdir,
-                        env=env,
-                        stdout=stdout,
-                        stderr=stderr,
-                        text=True,
-                        check=False,
-                    )
+                env = os.environ.copy()
+                env.update(command.env)
+                start = time.perf_counter()
+                with stdout_path.open("w", encoding="utf-8") as stdout:
+                    with stderr_path.open("w", encoding="utf-8") as stderr:
+                        process = subprocess.run(
+                            command.argv,
+                            cwd=command.workdir,
+                            env=env,
+                            stdout=stdout,
+                            stderr=stderr,
+                            text=True,
+                            check=False,
+                        )
+            except Exception as exc:
+                trace.write(
+                    "error",
+                    stage=stage,
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                    recoverable=isinstance(exc, EvalRunnerError),
+                    backend=manifest.backend_name,
+                    eval_workload=eval_workload.name,
+                    command=command.to_dict(),
+                    stdout_path=str(stdout_path),
+                    stderr_path=str(stderr_path),
+                )
+                trace.write(
+                    "run_end",
+                    status="error",
+                    return_code=None,
+                    trace_path=str(trace_path),
+                    warnings=[str(exc)],
+                )
+                raise
             elapsed_ms = (time.perf_counter() - start) * 1000
             status = "ok" if process.returncode == 0 else "error"
             trace.write(
