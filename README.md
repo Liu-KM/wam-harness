@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/logo/eazywam-logo-readme.png" alt="EazyWAM logo" width="760">
+</p>
+
 # EazyWAM
 
 EazyWAM is a deployment and acceleration harness for world-action models.
