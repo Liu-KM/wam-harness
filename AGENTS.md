@@ -148,3 +148,18 @@ Keep these documents aligned before or during implementation:
 - `docs/dependency_isolation.md`
 - `docs/roadmap.md`
 - `docs/trace_schema.md`
+
+## Human-Facing Local Artifacts
+
+When an HTML artifact is useful for a report, comparison, plan, or visual
+summary, keep it as concise as possible. Prefer a small self-contained page
+over a polished microsite, and include only the structure needed for a human to
+scan the result.
+
+Store generated HTML artifacts under `.local/human-html/`, not in the repository
+root or tracked documentation paths. `.local/` is ignored by git and is for
+local human-readable outputs, scratch reports, and review pages.
+
+Automation agents such as Codex and Claude should not treat `.local/human-html/`
+as source context. Do not read or summarize those files unless the user
+explicitly asks for a specific artifact.
