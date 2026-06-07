@@ -261,5 +261,5 @@ belong outside the public package.
 
 ## License
 
-The license has not been selected yet. Choose a license before making the
-repository public as open source.
+EazyWAM is released under the MIT License. Vendored third-party code and
+external model assets remain under their respective upstream licenses.

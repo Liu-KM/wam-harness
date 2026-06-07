@@ -146,7 +146,7 @@ upstream repository first.
 - Model support matrix.
 - Known gaps and hardware requirements per model entry.
 - Quickstarts for open-loop and simulator paths.
-- License selected before public release.
+- MIT license selected before public release.
 
 ## Later Optimization Profiles
 

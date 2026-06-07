@@ -5,7 +5,7 @@ display_name: Fake Open Loop WAM
 source:
   repo: eazywam/fake
   reference: Built-in deterministic fake backend for deployment spine testing.
-  license: TBD
+  license: MIT
 
 backend:
   name: fake
