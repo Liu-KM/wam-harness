@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from wam_harness.cli import main
-from wam_harness.core.compare import compare_traces
+from eazywam.cli import main
+from eazywam.core.compare import compare_traces
 
 
 def write_trace(path, events) -> None:
@@ -27,7 +27,7 @@ def event(run_id: str, name: str, **payload):
         "processor": "passthrough",
         "mode": "fake",
         "model_name": "Fake Open Loop WAM",
-        "source_repo": "wam-harness/fake",
+        "source_repo": "eazywam/fake",
     }
     base.update(payload)
     return base

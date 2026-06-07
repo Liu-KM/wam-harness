@@ -1,0 +1,162 @@
+schema_version: 1
+id: dreamzero-droid-sim
+display_name: DreamZero DROID Simulation Evaluation
+
+source:
+  repo: dreamzero0/dreamzero
+  reference: DreamZero DROID WAM with WebSocket policy server and DROID sim eval.
+  license: unknown
+
+assets:
+  checkpoint:
+    uri: hf://GEAR-Dreams/DreamZero-DROID
+    local_path: GEAR-Dreams/DreamZero-DROID
+  sim_assets:
+    uri: hf://owhan/DROID-sim-environments
+    local_path: DROID-sim-environments
+
+backend:
+  name: external_eval
+  mode: official_server_and_eval
+  config:
+    upstream: dreamzero
+    simulator: DROID
+    native_backend: dreamzero
+
+processor:
+  name: dreamzero_droid
+  observation:
+    image_views: [right, left, wrist]
+    state: joint_position_and_gripper
+    prompt: task_instruction
+  action:
+    horizon: 24
+    dim: 8
+    control_hz: null
+
+workload:
+  name: external_eval
+  config:
+    simulator: DROID
+    suite: droid_sim
+    official_entrypoint: eval_utils/run_sim_eval.py
+
+defaults:
+  device: cuda
+  dtype: bf16
+  action_horizon: 24
+  replan_steps: 24
+  return_future: true
+  return_value: false
+
+optimizations:
+  supported:
+    - dit_cache
+    - action_chunk_scheduling
+  profiles:
+    dit_cache:
+      enabled: false
+      scope: model_server
+      params: {}
+    action_chunk_scheduling:
+      enabled: true
+      scope: simulator_eval
+      params: {}
+  measured: []
+  unsupported:
+    vla_cache: Requires the OpenVLA model family.
+
+deployment:
+  reference_path: official_server_and_eval
+  product_path: native_backend_migration
+  native_backend: dreamzero
+  native_stage: native_smoke_verified
+  native_verified: true
+  parity_verified: false
+  next_gate: droid_sim_eval
+  notes:
+    - Native backend owns the resident WebSocket policy server lifecycle.
+    - Maintainer container native smoke has passed with real checkpoint assets and action shape [24, 8].
+    - Verified cold start is slow for this large resident server; default readiness timeout keeps margin for cold checkpoint loads.
+    - Baseline native server disables startup-time torch.compile; compile-based speedups should be enabled as measured optimization profiles.
+
+eval:
+  simulator: DROID
+  suite: droid_sim
+  upstream:
+    repo: dreamzero0/dreamzero
+    commit: ab790c1
+    local_env: WAM_DREAMZERO_REPO
+    default_dir: /workspace/dreamzero
+  defaults:
+    checkpoint_path: "{cache_dir}/GEAR-Dreams/DreamZero-DROID"
+    server_gpus: "0,1"
+    nproc_per_node: "2"
+    policy_port: "6000"
+    episodes: "1"
+    scene: "1"
+    headless_arg: "--headless"
+    server_startup_seconds: "1200"
+    disable_torch_compile: "true"
+    dit_cache_arg: ""
+    harness_dir: /mnt/eazywam
+    server_python: "{upstream_dir}/.venv/bin/python"
+    sim_python: "{cache_dir}/venvs/dreamzero-sim/bin/python"
+    sim_evals_pythonpath: "{harness_dir}/src/eazywam/compat/dreamzero_eval:{cache_dir}/upstreams/sim-evals/src:{upstream_dir}/eval_utils"
+  optimization_context:
+    dit_cache:
+      dit_cache_arg: "--enable-dit-cache"
+  command:
+    workdir: "{upstream_dir}"
+    env:
+      HF_HOME: "{cache_dir}/huggingface"
+      HF_HUB_CACHE: "{cache_dir}/huggingface/hub"
+      ISAAC_SIM_CACHE_PATH: "{cache_dir}/isaac-sim/cache"
+      OMNI_KIT_ACCEPT_EULA: "YES"
+      WANDB_MODE: offline
+    argv:
+      - bash
+      - -lc
+      - |
+        set -euo pipefail
+        mkdir -p "{output_dir}"
+        CUDA_VISIBLE_DEVICES={server_gpus} "{server_python}" -m torch.distributed.run --standalone --nproc_per_node={nproc_per_node} socket_test_optimized_AR.py --port {policy_port} {dit_cache_arg} --model-path {checkpoint_path} > "{output_dir}/policy_server.log" 2>&1 &
+        server_pid=$!
+        trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+        readiness_log="{output_dir}/readiness.log"
+        sim_eval_pythonpath="{sim_evals_pythonpath}"
+        : > "$readiness_log"
+        server_ready=0
+        for _ in $(seq 1 {server_startup_seconds}); do
+          if PYTHONPATH="$sim_eval_pythonpath" timeout 8 "{sim_python}" -u - "{policy_port}" >>"$readiness_log" 2>&1 <<'PY'; then
+        import sys
+        from policy_client import WebsocketClientPolicy
+
+        client = WebsocketClientPolicy(host="127.0.0.1", port=int(sys.argv[1]))
+        print("DreamZero policy server metadata:", repr(client.get_server_metadata()), flush=True)
+        client._ws.close()
+        PY
+            server_ready=1
+            break
+          fi
+          if ! kill -0 "$server_pid" 2>/dev/null; then
+            echo "DreamZero policy server exited before readiness; log follows:" >&2
+            sed -n '1,240p' "{output_dir}/policy_server.log" >&2 || true
+            wait "$server_pid"
+          fi
+          sleep 1
+        done
+        if [[ "$server_ready" != "1" ]]; then
+          echo "DreamZero policy server did not become ready within {server_startup_seconds}s; log follows:" >&2
+          sed -n '1,240p' "$readiness_log" >&2 || true
+          sed -n '1,240p' "{output_dir}/policy_server.log" >&2 || true
+          exit 124
+        fi
+        PYTHONPATH="$sim_eval_pythonpath" "{sim_python}" -m eval_utils.run_sim_eval --episodes {episodes} --scene {scene} {headless_arg} --host 127.0.0.1 --port {policy_port}
+
+known_gaps:
+  - Requires the DreamZero Python 3.11/PyTorch 2.8 CUDA environment and at least two GPUs.
+  - Uses separate DreamZero-server and Isaac-simulator virtualenvs because IsaacSim pins websockets 12 while DreamZero server requires the newer asyncio API.
+  - Shadows DreamZero's simulator policy_client with a narrow compatibility shim for IsaacSim's websockets 12 pin.
+  - Requires IsaacLab/sim_evals DROID simulation assets inside the container.
+  - The first supported command launches the official WebSocket policy server inside the job.

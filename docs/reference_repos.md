@@ -9,14 +9,14 @@ Useful as the product reference for a local model UX: model ids, simple model
 library commands, prepare/run/serve flow, and curated defaults that hide common
 setup details.
 
-WAM Harness cannot copy Ollama directly because WAM assets include checkpoints,
+EazyWAM cannot copy Ollama directly because WAM assets include checkpoints,
 normalizers, action schemas, camera conventions, processors, and often simulator
 dependencies. Curated model entries should provide the analogous default layer.
 
 ## LeRobot
 
 Useful as the ecosystem reference for robot-learning datasets, policies, and
-model distribution on Hugging Face. WAM Harness should complement this ecosystem
+model distribution on Hugging Face. EazyWAM should complement this ecosystem
 rather than replace it: use upstream assets and provide a deployment plus
 inference-optimization wrapper.
 

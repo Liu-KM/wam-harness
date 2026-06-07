@@ -186,7 +186,7 @@ explicit `--reference`.
 The acceptance verifier for this path is:
 
 ```bash
-python -m wam_harness.evals.acceptance --json SUMMARY_JSON EXPECTED_TRIALS MIN_SUCCESS_RATE
+python -m eazywam.evals.acceptance --json SUMMARY_JSON EXPECTED_TRIALS MIN_SUCCESS_RATE
 ```
 
 It checks the saved summary and trace rather than rerunning the model. A passing

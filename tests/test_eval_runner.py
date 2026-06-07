@@ -4,15 +4,15 @@ import types
 
 import pytest
 
-from wam_harness.backends.fake import FakeBackend
-from wam_harness.backends.native_support.runtime import native_runtime_resolver
-from wam_harness.cli import main
-from wam_harness.core.eval_runner import EvalRunner, EvalRunnerError
-from wam_harness.core.manifest import load_builtin_manifest, manifest_from_dict
-from wam_harness.core.registry import Registry
-from wam_harness.evals.acceptance import validate_native_eval_summary
-from wam_harness.evals.libero import LiberoSingleTaskEvalRunner, _import_libero_modules
-from wam_harness.processors.passthrough import PassthroughProcessor
+from eazywam.backends.fake import FakeBackend
+from eazywam.backends.native_support.runtime import native_runtime_resolver
+from eazywam.cli import main
+from eazywam.core.eval_runner import EvalRunner, EvalRunnerError
+from eazywam.core.manifest import load_builtin_manifest, manifest_from_dict
+from eazywam.core.registry import Registry
+from eazywam.evals.acceptance import validate_native_eval_summary
+from eazywam.evals.libero import LiberoSingleTaskEvalRunner, _import_libero_modules
+from eazywam.processors.passthrough import PassthroughProcessor
 
 
 def test_real_eval_manifests_load() -> None:
@@ -240,7 +240,7 @@ def test_eval_runner_profile_context_dreamzero_dit_cache(tmp_path) -> None:
     assert "PYTHONPATH" not in summary.command.env
     assert (
         "sim_eval_pythonpath="
-        '"/mnt/wam-harness/src/wam_harness/compat/dreamzero_eval:'
+        '"/mnt/eazywam/src/eazywam/compat/dreamzero_eval:'
         f"{tmp_path / 'cache'}/upstreams/sim-evals/src:/tmp/dreamzero/eval_utils"
         in summary.command.display
     )

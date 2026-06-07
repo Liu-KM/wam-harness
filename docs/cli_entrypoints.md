@@ -1,6 +1,6 @@
 # CLI Entry Points
 
-WAM Harness should feel like a local model tool, not a cluster or systems
+EazyWAM should feel like a local model tool, not a cluster or systems
 framework. The first user-facing commands should be few, plain, and ordered
 around what a new user naturally needs to do.
 
@@ -31,7 +31,7 @@ out of the first user-facing flow.
 |---|---|---|
 | `wam list` | Show available model entries. | Make the model library visible. |
 | `wam info <model>` | Explain what this model is and what it needs. | Translate internal YAML into readable model information. |
-| `wam doctor [model]` | Check whether this machine or runtime can run WAM Harness, optionally for one model. | Diagnose missing GPU, cache path, required assets, and native backend repo mounts without modifying the environment. |
+| `wam doctor [model]` | Check whether this machine or runtime can run EazyWAM, optionally for one model. | Diagnose missing GPU, cache path, required assets, and native backend repo mounts without modifying the environment. |
 | `wam prepare <model>` | Prepare this model's assets for use. | Create cache directories, verify declared assets, and explain remaining manual requirements. |
 | `wam run <model> --input obs.json` | Run one explicit observation through the product path. | Refuse to invent a WAM observation; one-shot inference uses the same observation contract as serve. |
 | `wam eval <model>` | Run a curated simulator evaluation for this model. | Make real simulator smoke/full-suite runs easy while still tracing the command, environment, and outputs. |
@@ -93,7 +93,7 @@ It runs prepare, doctor, simulator preflight, native smoke, native eval with
 report:
 
 ```bash
-python -m wam_harness.evals.acceptance --json \
+python -m eazywam.evals.acceptance --json \
   runs/fastwam-libero-libero-single-task-eval-summary.json \
   1 \
   1.0

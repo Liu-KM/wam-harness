@@ -1,6 +1,6 @@
 # Containers
 
-Container recipes are the portable environment definitions for WAM Harness.
+Container recipes are the portable environment definitions for EazyWAM.
 
 - `core/Dockerfile`: lightweight core image for the fake backend, `wam run`, and
   `wam serve --smoke`.
@@ -10,7 +10,7 @@ Container recipes are the portable environment definitions for WAM Harness.
 - `dreamzero/Dockerfile`: DreamZero DROID policy-server and sim-eval
   environment.
 
-WAM Harness supports two heavy-backend setup paths:
+EazyWAM supports two heavy-backend setup paths:
 
 - **Container path:** build or publish a backend image, then run the normal
   `wam` commands inside the site's container launcher.
@@ -21,10 +21,10 @@ WAM Harness supports two heavy-backend setup paths:
 Build locally:
 
 ```bash
-docker build -f containers/core/Dockerfile -t wam-harness-core:latest .
-docker build -f containers/fastwam/Dockerfile -t wam-harness-fastwam:cu128 .
-docker build -f containers/cosmos-policy/Dockerfile -t wam-harness-cosmos-policy:latest .
-docker build -f containers/dreamzero/Dockerfile -t wam-harness-dreamzero:latest .
+docker build -f containers/core/Dockerfile -t eazywam-core:latest .
+docker build -f containers/fastwam/Dockerfile -t eazywam-fastwam:cu128 .
+docker build -f containers/cosmos-policy/Dockerfile -t eazywam-cosmos-policy:latest .
+docker build -f containers/dreamzero/Dockerfile -t eazywam-dreamzero:latest .
 ```
 
 On a cluster, run these images through the site's normal container launcher.
@@ -66,7 +66,7 @@ non-container environments share the same dependency list.
 For FastWAM, the expected container-internal shape is:
 
 ```text
-/workspace/wam-harness  installed harness package and working directory
+/workspace/eazywam  installed harness package and working directory
 /opt/LIBERO             upstream LIBERO checkout
 /mnt/wam-cache          mounted model/cache directory
 /mnt/runs               mounted trace/output directory
@@ -91,7 +91,7 @@ mkdir -p /path/to/wam-cache /path/to/runs
 docker run --rm --gpus all \
   -v /path/to/wam-cache:/mnt/wam-cache \
   -v /path/to/runs:/mnt/runs \
-  wam-harness-fastwam:cu128 \
+  eazywam-fastwam:cu128 \
   wam-fastwam-libero-eval \
     --cache-dir /mnt/wam-cache \
     --trace-dir /mnt/runs \
@@ -130,7 +130,7 @@ It runs `wam prepare --asset eval`, `wam doctor --strict`, `wam native-smoke
 --workload libero-single-task` product path. Set `WAM_PREPARE_DOWNLOAD=1` or
 pass `--download-assets` when the container should fetch missing model assets.
 The wrapper saves the eval summary in the trace directory and immediately
-validates it with `python -m wam_harness.evals.acceptance`.
+validates it with `python -m eazywam.evals.acceptance`.
 
 If the site cannot download from Hugging Face inside the GPU job, prepare the
 cache elsewhere and mount it into `/mnt/wam-cache`. For FastWAM LIBERO, the
@@ -145,7 +145,7 @@ This is about 25 GiB and does not download full Wan repository snapshots.
 To re-check a saved run without rerunning the model:
 
 ```bash
-python -m wam_harness.evals.acceptance --json \
+python -m eazywam.evals.acceptance --json \
   /mnt/runs/fastwam-libero-libero-single-task-eval-summary.json \
   1 \
   1.0
@@ -200,7 +200,7 @@ scripts/setup_fastwam_native_env.sh \
 ```
 
 The script creates a `uv` virtual environment, clones LIBERO if requested,
-installs the WAM Harness CLI and vendored FastWAM runtime into that
+installs the EazyWAM CLI and vendored FastWAM runtime into that
 environment, installs the FastWAM/LIBERO runtime dependencies, writes a LIBERO
 config file, and runs a Python import smoke test. It does not submit jobs,
 download large model assets, or choose a cluster launcher. It clones FastWAM

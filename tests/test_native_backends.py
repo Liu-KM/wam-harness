@@ -3,28 +3,28 @@ from types import SimpleNamespace
 
 import pytest
 
-from wam_harness.backends.cosmos_policy import (
+from eazywam.backends.cosmos_policy import (
     CosmosPolicyBackend,
     CosmosPolicyRuntimeBundle,
     CosmosPolicyModelAdapter,
     CosmosPolicyNativeBackendError,
 )
-from wam_harness.backends.dreamzero import (
+from eazywam.backends.dreamzero import (
     DreamZeroBackend,
     DreamZeroNativeBackendError,
     DreamZeroPolicyServerAdapter,
     DreamZeroPolicyServerRuntimeBundle,
 )
-from wam_harness.backends.fastwam import FastWAMBackend
-from wam_harness.backends.native import (
+from eazywam.backends.fastwam import FastWAMBackend
+from eazywam.backends.native import (
     NativeBackendBase,
     NativeModelAdapter,
     NativeModelCall,
     NativeRuntimeLoader,
 )
-from wam_harness.core.manifest import load_builtin_manifest, manifest_from_dict
-from wam_harness.core.registry import default_registry
-from wam_harness.core.types import ActionChunk, InferenceRequest, InferenceResult, Observation
+from eazywam.core.manifest import load_builtin_manifest, manifest_from_dict
+from eazywam.core.registry import default_registry
+from eazywam.core.types import ActionChunk, InferenceRequest, InferenceResult, Observation
 
 
 def _native_manifest(model_id: str, backend_name: str, tmp_path):
@@ -1165,14 +1165,14 @@ def test_dreamzero_start_server_captures_stdout_to_log(tmp_path, monkeypatch) ->
         kwargs["stdout"].flush()
         return _DreamZeroProcess()
 
-    monkeypatch.setattr("wam_harness.backends.dreamzero.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("eazywam.backends.dreamzero.subprocess.Popen", fake_popen)
 
     process = backend._start_server(repo, checkpoint)
 
     assert seen["argv"] == [
         f"{repo}/.venv/bin/python",
         "-m",
-        "wam_harness.compat.dreamzero_eval.serve_dreamzero_no_compile",
+        "eazywam.compat.dreamzero_eval.serve_dreamzero_no_compile",
         "--model_path",
         str(checkpoint),
         "--host",

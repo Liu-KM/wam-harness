@@ -11,4 +11,4 @@ This package vendors the runtime subset of `yuantianyuan01/FastWAM` for the
   simulator/vendor trees
 
 Local edits should stay limited to making the runtime importable without
-training dependencies and to adapting asset/config lookup for WAM Harness.
+training dependencies and to adapting asset/config lookup for EazyWAM.

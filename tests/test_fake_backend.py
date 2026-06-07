@@ -1,5 +1,5 @@
-from wam_harness.core.registry import default_registry
-from wam_harness.core.types import InferenceRequest
+from eazywam.core.registry import default_registry
+from eazywam.core.types import InferenceRequest
 
 
 def test_fake_backend_is_deterministic() -> None:

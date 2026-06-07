@@ -1,7 +1,10 @@
-# WAM Harness
+# EazyWAM
 
-WAM Harness is an Ollama-like local deployment and inference-optimization
-platform for world-action models (WAMs).
+EazyWAM is an open-source deployment and acceleration harness for world-action
+models.
+
+It makes WAMs easier to prepare, run, evaluate, serve, and optimize through a
+small `wam` CLI.
 
 The goal is to make WAM inference easy to run, easy to serve, and easy to
 accelerate without turning the core project into a collection of upstream model
@@ -133,7 +136,7 @@ architectures. See `docs/optimization_integration.md`.
 ## Current Layout
 
 ```text
-src/wam_harness/
+src/eazywam/
   cli.py       Command-line entry point and command dispatch.
   serve.py     Local HTTP policy server.
   core/        Stable harness abstractions, runners, traces, and model entries.
@@ -212,7 +215,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-The project is packaged through `src/wam_harness` and exposes the `wam` CLI.
+The project is packaged through `src/eazywam` and exposes the `wam` CLI.
 
 There are two supported setup paths:
 
@@ -225,14 +228,14 @@ There are two supported setup paths:
 Build the core container image locally with:
 
 ```bash
-docker build -f containers/core/Dockerfile -t wam-harness-core:latest .
+docker build -f containers/core/Dockerfile -t eazywam-core:latest .
 ```
 
 Build the FastWAM backend image when Docker or a compatible cluster container
 runtime is available:
 
 ```bash
-docker build -f containers/fastwam/Dockerfile -t wam-harness-fastwam:latest .
+docker build -f containers/fastwam/Dockerfile -t eazywam-fastwam:latest .
 ```
 
 Install the FastWAM runtime directly when containers are not available:

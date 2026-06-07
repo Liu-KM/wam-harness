@@ -1,6 +1,6 @@
 # Inference Optimization Integration
 
-This document defines how WAM Harness should absorb existing single-point
+This document defines how EazyWAM should absorb existing single-point
 WAM/VLA optimization repositories into an Ollama-like deployment platform
 without becoming a fork of each upstream project.
 
@@ -38,7 +38,7 @@ Instead, each optimization enters through one of these boundaries:
 This mirrors the mature inference-framework pattern: vLLM exposes engine args
 and JSON configs such as `--speculative-config`; SGLang exposes server flags and
 YAML config; TensorRT-LLM exposes CLI flags plus extra YAML runtime options.
-WAM Harness should use the same style, but with WAM-specific trace fields and
+EazyWAM should use the same style, but with WAM-specific trace fields and
 output-drift checks.
 
 ## Deployment Classes
@@ -125,7 +125,7 @@ output_check: action_drift_or_success_rate
 ## Lessons From Current Upstreams
 
 The upstream survey was performed from shallow clones under
-`/tmp/wam-harness-upstreams`.
+`/tmp/eazywam-upstreams`.
 
 | Upstream | Useful toggle pattern | Harness classification | Integration risk |
 |---|---|---|---|
@@ -155,7 +155,7 @@ load and emit enough timing/success data for a wrapper.
 Expected upstream commands:
 
 ```bash
-cd /tmp/wam-harness-upstreams/vla-cache/src/openvla
+cd /tmp/eazywam-upstreams/vla-cache/src/openvla
 pip install -e .
 python vla_cache_scripts/download_model_local.py \
   --model_id openvla/openvla-7b-finetuned-libero-spatial
@@ -196,7 +196,7 @@ Goal: validate remote policy-server controls without reproducing training.
 Expected upstream commands:
 
 ```bash
-cd /tmp/wam-harness-upstreams/FASTER
+cd /tmp/eazywam-upstreams/FASTER
 GIT_LFS_SKIP_SMUDGE=1 uv sync
 GIT_LFS_SKIP_SMUDGE=1 uv pip install -e .
 uv run scripts/serve_policy.py \
@@ -243,7 +243,7 @@ adding runtime optimizations.
 Expected upstream commands:
 
 ```bash
-cd /tmp/wam-harness-upstreams/FastWAM
+cd /tmp/eazywam-upstreams/FastWAM
 pip install -e .
 python scripts/preprocess_action_dit_backbone.py \
   --model-config configs/model/fastwam.yaml \
@@ -285,7 +285,7 @@ Goal: treat ServoFlow as a runtime backend rather than a patch set.
 Expected upstream commands:
 
 ```bash
-cd /tmp/wam-harness-upstreams/servoflow
+cd /tmp/eazywam-upstreams/servoflow
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DSF_CUDA_ARCHS="86"
 cmake --build build -j$(nproc)
 ctest --test-dir build --output-on-failure

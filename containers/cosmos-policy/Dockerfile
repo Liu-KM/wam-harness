@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.12 /uv /uvx /usr/local/bin/
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 COPY pyproject.toml README.md uv.lock ./
 COPY src ./src
@@ -35,8 +35,8 @@ RUN chmod +x /usr/local/bin/wam-cosmos-policy-native-smoke \
     && git -C /opt/cosmos-policy checkout "${COSMOS_POLICY_REF}" \
     && cd /opt/cosmos-policy \
     && uv sync --extra cu128 --group libero --python 3.10 \
-    && uv pip install --python /opt/cosmos-policy/.venv/bin/python /workspace/wam-harness
+    && uv pip install --python /opt/cosmos-policy/.venv/bin/python /workspace/eazywam
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 CMD ["wam", "--help"]

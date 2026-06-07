@@ -1,11 +1,11 @@
 import json
 from contextlib import nullcontext
 
-from wam_harness.backends.fastwam import FastWAMBackend, FastWAMModelAdapter
-from wam_harness.backends.native_support.runtime import native_runtime_resolver
-from wam_harness.cli import build_parser, main
-from wam_harness.core.registry import Registry
-from wam_harness.core.types import (
+from eazywam.backends.fastwam import FastWAMBackend, FastWAMModelAdapter
+from eazywam.backends.native_support.runtime import native_runtime_resolver
+from eazywam.cli import build_parser, main
+from eazywam.core.registry import Registry
+from eazywam.core.types import (
     ActionChunk,
     InferenceResult,
     Manifest,
@@ -637,7 +637,7 @@ def _fastwam_product_registry(tmp_path):
 
 
 def _patch_default_registry(monkeypatch, registry: Registry) -> None:
-    import wam_harness.defaults as defaults
+    import eazywam.defaults as defaults
 
     monkeypatch.setattr(defaults, "default_registry", lambda: registry)
 

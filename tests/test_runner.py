@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from wam_harness.backends.native_support.runtime import native_runtime_resolver
-from wam_harness.core.preflight import PreflightError
-from wam_harness.core.registry import Registry
-from wam_harness.core.runner import RunInputRequiredError, Runner
-from wam_harness.core.types import (
+from eazywam.backends.native_support.runtime import native_runtime_resolver
+from eazywam.core.preflight import PreflightError
+from eazywam.core.registry import Registry
+from eazywam.core.runner import RunInputRequiredError, Runner
+from eazywam.core.types import (
     ActionChunk,
     InferenceRequest,
     InferenceResult,
@@ -15,7 +15,7 @@ from wam_harness.core.types import (
     OptimizationProfile,
     RuntimeInfo,
 )
-from wam_harness.processors.passthrough import PassthroughProcessor
+from eazywam.processors.passthrough import PassthroughProcessor
 
 
 def read_events(path):

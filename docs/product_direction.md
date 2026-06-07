@@ -1,6 +1,6 @@
 # Product Direction: Ollama For WAM
 
-WAM Harness should be the easiest way to try, serve, and optimize WAM/VLA
+EazyWAM should be the easiest way to try, serve, and optimize WAM/VLA
 inference in a portable runtime environment.
 
 The target user is a new embodied-AI user or systems builder who wants to run a
@@ -10,7 +10,7 @@ make optimization toggles inspectable.
 
 ## Positioning
 
-WAM Harness is not just a benchmark wrapper. It should become a local
+EazyWAM is not just a benchmark wrapper. It should become a local
 deployment layer for WAMs:
 
 ```bash
@@ -115,7 +115,7 @@ clear cache on/off switch.
 ## Differentiation
 
 LeRobot is the likely default place users look for robot learning datasets,
-policies, and training workflows. WAM Harness should not compete by being a
+policies, and training workflows. EazyWAM should not compete by being a
 larger robot-learning framework.
 
 The wedge is:

@@ -1,6 +1,6 @@
 # Config Schema
 
-WAM Harness has two configuration layers:
+EazyWAM has two configuration layers:
 
 - Model entries define curated defaults for `wam run <model-id>` and
   `wam serve <model-id>`.

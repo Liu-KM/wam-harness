@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from wam_harness.core.assets import _hf_local_dir, parse_hf_uri
-from wam_harness.cli_render import render_prepare
-from wam_harness.core.model_entry import prepare_model_entry
+from eazywam.core.assets import _hf_local_dir, parse_hf_uri
+from eazywam.cli_render import render_prepare
+from eazywam.core.model_entry import prepare_model_entry
 
 
 FASTWAM_EVAL_ASSETS = [

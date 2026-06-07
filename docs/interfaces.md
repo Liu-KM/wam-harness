@@ -1,6 +1,6 @@
 # 上层接口契约（Interfaces）
 
-本文件用 Python `Protocol` 的形式确定 WAM Harness 的核心抽象边界。实现可以在
+本文件用 Python `Protocol` 的形式确定 EazyWAM 的核心抽象边界。实现可以在
 Phase A 中细化这些草图，但必须保持产品边界：model id → model entry → backend /
 processor → action chunk。
 
@@ -8,7 +8,7 @@ processor → action chunk。
 （FastWAM/DreamZero/Cosmos/LingBot/Motus/Qi）的分支判断。backend-native 的张量
 布局、归一化、cache 机制、传输协议一律不得穿过这些接口。
 
-> 这些是契约草图，不是 `src/` 实现。类型最终落在 `src/wam_harness/core/`，
+> 这些是契约草图，不是 `src/` 实现。类型最终落在 `src/eazywam/core/`，
 > 由 Phase A deployment spine 实现。
 
 ## 数据类型（契约对象）

@@ -2,19 +2,19 @@ import json
 
 import pytest
 
-from wam_harness.backends.fastwam import FastWAMBackend
-from wam_harness.cli import build_parser, main
-from wam_harness.core.action_contract import ActionContractError
-from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.backends.native_support.smoke import (
+from eazywam.backends.fastwam import FastWAMBackend
+from eazywam.cli import build_parser, main
+from eazywam.core.action_contract import ActionContractError
+from eazywam.core.manifest import load_builtin_manifest
+from eazywam.backends.native_support.smoke import (
     NativeSmokeRunner,
     NativeSmokeRunnerError,
     native_smoke_manifest,
 )
-from wam_harness.backends.native_support.runtime import native_runtime_resolver
-from wam_harness.core.preflight import PreflightError
-from wam_harness.core.registry import Registry, default_registry
-from wam_harness.core.types import (
+from eazywam.backends.native_support.runtime import native_runtime_resolver
+from eazywam.core.preflight import PreflightError
+from eazywam.core.registry import Registry, default_registry
+from eazywam.core.types import (
     ActionChunk,
     InferenceRequest,
     InferenceResult,

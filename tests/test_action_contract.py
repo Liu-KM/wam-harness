@@ -2,13 +2,13 @@ import math
 
 import pytest
 
-from wam_harness.core.action_contract import (
+from eazywam.core.action_contract import (
     ActionContractError,
     maybe_validate_action_contract,
     validate_action_contract,
 )
-from wam_harness.core.manifest import load_builtin_manifest, manifest_from_dict
-from wam_harness.core.types import ActionChunk
+from eazywam.core.manifest import load_builtin_manifest, manifest_from_dict
+from eazywam.core.types import ActionChunk
 
 
 def test_validate_action_contract_accepts_declared_shape() -> None:

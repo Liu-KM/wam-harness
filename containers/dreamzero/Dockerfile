@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:0.8.12 /uv /uvx /usr/local/bin/
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 COPY pyproject.toml README.md uv.lock ./
 COPY src ./src
@@ -42,8 +42,8 @@ RUN chmod +x /usr/local/bin/wam-dreamzero-native-smoke \
       torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 \
     && .venv/bin/python -m pip install --no-cache-dir -e . \
     && .venv/bin/python -m pip install --no-cache-dir flash-attn --no-build-isolation \
-    && uv pip install --python /opt/dreamzero/.venv/bin/python /workspace/wam-harness
+    && uv pip install --python /opt/dreamzero/.venv/bin/python /workspace/eazywam
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 CMD ["wam", "--help"]

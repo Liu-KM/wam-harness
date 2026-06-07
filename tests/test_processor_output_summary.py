@@ -1,10 +1,10 @@
 import pytest
 
-from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.core.registry import default_registry
-from wam_harness.processors.cosmos_policy_libero import CosmosPolicyProcessorError
-from wam_harness.processors.dreamzero_droid import DreamZeroProcessorError
-from wam_harness.processors.output_summary import (
+from eazywam.core.manifest import load_builtin_manifest
+from eazywam.core.registry import default_registry
+from eazywam.processors.cosmos_policy_libero import CosmosPolicyProcessorError
+from eazywam.processors.dreamzero_droid import DreamZeroProcessorError
+from eazywam.processors.output_summary import (
     action_chunk_from_raw,
     summarize_future_output,
     summarize_value_output,

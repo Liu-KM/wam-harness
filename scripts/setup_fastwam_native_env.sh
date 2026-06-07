@@ -9,13 +9,13 @@ Usage:
 Purpose:
   Build a self-managed FastWAM native runtime environment without Docker,
   Apptainer, Slurm, or site-specific launchers. FastWAM runtime code is
-  provided by WAM Harness; an upstream FastWAM checkout is only needed for
+  provided by EazyWAM; an upstream FastWAM checkout is only needed for
   explicit reference-eval parity checks.
 
 Options:
   --upstream-dir PATH       Optional FastWAM checkout path for reference eval/debug.
   --venv PATH               Python venv path. Default: .venv-fastwam
-  --harness-dir PATH        WAM Harness source path. Default: current directory.
+  --harness-dir PATH        EazyWAM source path. Default: current directory.
   --cache-dir PATH          WAM cache path. Default: ${WAM_CACHE_DIR:-~/.cache/wam}
   --libero-dir PATH         LIBERO checkout path. Default: <cache-dir>/upstreams/LIBERO
   --python VERSION          Python version for uv venv. Default: 3.10
@@ -23,7 +23,7 @@ Options:
   --fastwam-ref REF         Optional FastWAM ref used with --clone and --upstream-dir. Default: 45d8e14
   --libero-ref REF          LIBERO git ref used with --clone. Default: master
   --clone                   Clone missing optional FastWAM reference repo and/or LIBERO.
-  --no-harness              Do not install WAM Harness into the venv.
+  --no-harness              Do not install EazyWAM into the venv.
   --no-libero               Do not install LIBERO/simulator runtime packages.
   --no-configure-libero     Do not write LIBERO_CONFIG_PATH/config.yaml.
   --help                    Show this help.

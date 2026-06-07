@@ -357,7 +357,7 @@ def _resolve_train_device() -> str:
 
 def run_training(cfg: DictConfig):
     raise RuntimeError(
-        "The FastWAM runtime vendored by WAM Harness is inference-only and does not "
+        "The FastWAM runtime vendored by EazyWAM is inference-only and does not "
         "include the training stack."
     )
 

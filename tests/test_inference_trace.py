@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from wam_harness.core.action_contract import ActionContractError
-from wam_harness.core.inference_trace import (
+from eazywam.core.action_contract import ActionContractError
+from eazywam.core.inference_trace import (
     inference_result_payload,
     observation_summary,
 )
-from wam_harness.core.manifest import load_builtin_manifest, manifest_from_dict
-from wam_harness.core.types import ActionChunk, InferenceResult, Observation
+from eazywam.core.manifest import load_builtin_manifest, manifest_from_dict
+from eazywam.core.types import ActionChunk, InferenceResult, Observation
 
 
 def test_observation_summary_reports_contract_keys() -> None:

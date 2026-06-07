@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python -m pip install --no-cache-dir -U pip uv huggingface_hub
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 COPY pyproject.toml README.md uv.lock ./
 COPY src ./src
@@ -42,15 +42,15 @@ COPY scripts/fastwam-libero-eval.sh ./scripts/fastwam-libero-eval.sh
 RUN chmod +x /usr/local/bin/wam-fastwam-native-smoke \
       ./scripts/setup_fastwam_native_env.sh \
       ./scripts/fastwam-libero-eval.sh \
-    && ln -sf /workspace/wam-harness/scripts/fastwam-libero-eval.sh /usr/local/bin/wam-fastwam-libero-eval \
+    && ln -sf /workspace/eazywam/scripts/fastwam-libero-eval.sh /usr/local/bin/wam-fastwam-libero-eval \
     && ./scripts/setup_fastwam_native_env.sh \
       --venv "${WAM_FASTWAM_VENV}" \
       --libero-dir /opt/LIBERO \
       --cache-dir /mnt/wam-cache \
-      --harness-dir /workspace/wam-harness \
+      --harness-dir /workspace/eazywam \
       --libero-ref "${LIBERO_REF}" \
       --clone
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 CMD ["wam", "--help"]

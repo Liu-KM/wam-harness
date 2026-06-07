@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from wam_harness.evals.acceptance import (
+from eazywam.evals.acceptance import (
     AcceptanceError,
     main,
     validate_native_eval_summary,

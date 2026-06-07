@@ -3,9 +3,9 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_SYSTEM_PYTHON=1 \
-    PATH="/workspace/wam-harness/.venv/bin:${PATH}"
+    PATH="/workspace/eazywam/.venv/bin:${PATH}"
 
-WORKDIR /workspace/wam-harness
+WORKDIR /workspace/eazywam
 
 RUN python -m pip install --no-cache-dir --upgrade pip uv
 

@@ -1,4 +1,4 @@
-# WAM Harness 架构分析
+# EazyWAM 架构分析
 
 > 只读审查 · 产品原型阶段 · 重点：可扩展性 · 验证基线：`172 tests passed`, `ruff` clean
 >

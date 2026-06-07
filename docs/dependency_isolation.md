@@ -1,6 +1,6 @@
 # Dependency Isolation Strategy
 
-Backend dependency isolation is a first-class product problem for WAM Harness.
+Backend dependency isolation is a first-class product problem for EazyWAM.
 WAM/VLA repositories often bind together model code, simulator code, CUDA
 versions, JAX/PyTorch versions, dataset tools, and robot-control utilities. A
 usable Ollama-like WAM tool must prevent those dependencies from contaminating
@@ -74,7 +74,7 @@ Use when:
 Backend containers still expose the harness contract: `wam run`, `wam serve`,
 runtime info, traces, and optimization profiles.
 
-Backend containers must install the WAM Harness CLI into the backend runtime
+Backend containers must install the EazyWAM CLI into the backend runtime
 environment. Mounting only the repository or only the upstream project is not
 enough: `wam doctor`, `wam native-smoke`, `wam run`, and `wam serve` must inspect
 the same Python modules and assets that `backend.load()` will use.
@@ -114,7 +114,7 @@ target is job-local serving inside whatever environment launched the container.
 
 ## Scheduler Boundary
 
-WAM Harness should not teach users how to submit jobs to every cluster. The
+EazyWAM should not teach users how to submit jobs to every cluster. The
 core project owns the command that runs after compute has been allocated:
 
 ```bash

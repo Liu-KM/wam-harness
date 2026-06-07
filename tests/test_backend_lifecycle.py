@@ -4,13 +4,13 @@ import json
 
 import pytest
 
-from wam_harness.backends.native_support.smoke import NativeSmokeRunner
-from wam_harness.backends.native_support.runtime import native_runtime_resolver
-from wam_harness.core.invocation import Invocation
-from wam_harness.core.registry import Registry, RegistryError
-from wam_harness.core.runtime import RUN_SPEC
-from wam_harness.core.runner import Runner
-from wam_harness.core.types import (
+from eazywam.backends.native_support.smoke import NativeSmokeRunner
+from eazywam.backends.native_support.runtime import native_runtime_resolver
+from eazywam.core.invocation import Invocation
+from eazywam.core.registry import Registry, RegistryError
+from eazywam.core.runtime import RUN_SPEC
+from eazywam.core.runner import Runner
+from eazywam.core.types import (
     ActionChunk,
     InferenceRequest,
     InferenceResult,
@@ -19,8 +19,8 @@ from wam_harness.core.types import (
     OptimizationProfile,
     RuntimeInfo,
 )
-from wam_harness.serve import ServeApp, WamHTTPServer
-from wam_harness.workloads.open_loop import OpenLoopWorkload
+from eazywam.serve import ServeApp, WamHTTPServer
+from eazywam.workloads.open_loop import OpenLoopWorkload
 
 
 class TrackingBackend:

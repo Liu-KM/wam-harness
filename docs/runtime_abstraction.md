@@ -1,6 +1,6 @@
 # Runtime Abstraction
 
-WAM Harness owns the WAM command contract, not the user's scheduler.
+EazyWAM owns the WAM command contract, not the user's scheduler.
 
 The public goal is that a user can run the same model entry through the same
 `wam` command in any environment that already provides the required compute,
@@ -52,7 +52,7 @@ Users and cluster operators decide:
 - how to expose or block network endpoints;
 - whether long-running services are allowed.
 
-These details vary too much across institutions to be a core WAM Harness
+These details vary too much across institutions to be a core EazyWAM
 contribution.
 
 ## Runtime Profiles
@@ -79,7 +79,7 @@ run directory           traces, logs, videos, and artifacts
 upstream directory      optional upstream repository checkout
 ```
 
-Container examples use `/workspace/wam-harness`, `/mnt/wam-cache`, `/mnt/runs`,
+Container examples use `/workspace/eazywam`, `/mnt/wam-cache`, `/mnt/runs`,
 and `/opt/<backend>`. Self-managed environments may use any absolute paths as
 long as the same paths are passed to `wam doctor`, `wam prepare`, `wam run`,
 `wam native-smoke`, `wam eval`, and `wam serve`.

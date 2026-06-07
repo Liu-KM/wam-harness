@@ -1,7 +1,7 @@
 # FastWAM LIBERO Eval Setup
 
 This page records the current reproducible path for running the released
-FastWAM LIBERO checkpoint through WAM Harness.
+FastWAM LIBERO checkpoint through EazyWAM.
 
 ## What `wam prepare` Downloads
 
@@ -52,7 +52,7 @@ FastWAM LIBERO now has two supported environment paths:
   Docker/Apptainer directly. This installs the same runtime dependencies into a
   dedicated Python environment.
 - **Docker/prebuilt image**: use this when Docker or a site container launcher is
-  available. The image contains WAM Harness, the vendored FastWAM runtime,
+  available. The image contains EazyWAM, the vendored FastWAM runtime,
   LIBERO, robosuite, MuJoCo, and the helper commands.
 
 Both paths use the same cache layout and the same product commands. Neither path
@@ -73,7 +73,7 @@ scripts/setup_fastwam_native_env.sh \
 What this does:
 
 - creates a `uv` virtual environment;
-- installs WAM Harness and the vendored FastWAM runtime;
+- installs EazyWAM and the vendored FastWAM runtime;
 - installs the FastWAM/LIBERO runtime dependencies, including robosuite and
   MuJoCo;
 - clones LIBERO into `<cache-dir>/upstreams/LIBERO` when `--clone` is used;
@@ -134,7 +134,7 @@ It runs the product path in order:
    observation before loading the model.
 4. `wam native-smoke fastwam-libero --require-ready`.
 5. `wam eval fastwam-libero --workload libero-single-task --summary-path ...`.
-6. `python -m wam_harness.evals.acceptance ...` on the saved summary.
+6. `python -m eazywam.evals.acceptance ...` on the saved summary.
 
 The summary is written under the selected trace directory:
 
@@ -151,7 +151,7 @@ wrapper does not need to scrape JSON out of stdout.
 Re-check an existing run without rerunning the model:
 
 ```bash
-python -m wam_harness.evals.acceptance --json \
+python -m eazywam.evals.acceptance --json \
   /path/to/runs/fastwam-libero-libero-single-task-eval-summary.json \
   1 \
   1.0
@@ -171,7 +171,7 @@ run, while `*-acceptance.json` is the machine-readable proof that the summary,
 trace, results JSON, runtime metadata, trial count, and success-rate gate passed
 the acceptance checks.
 
-The native product path uses the FastWAM runtime vendored in WAM Harness and
+The native product path uses the FastWAM runtime vendored in EazyWAM and
 does not need a FastWAM upstream checkout. Keep `--upstream-dir` only for
 explicit reference-eval parity checks against the official scripts:
 
@@ -202,7 +202,7 @@ Build the FastWAM image from the repository root:
 ```bash
 docker build \
   -f containers/fastwam/Dockerfile \
-  -t wam-harness-fastwam:cu128 \
+  -t eazywam-fastwam:cu128 \
   .
 ```
 
@@ -214,7 +214,7 @@ mkdir -p /path/to/wam-cache /path/to/runs
 docker run --rm --gpus all \
   -v /path/to/wam-cache:/mnt/wam-cache \
   -v /path/to/runs:/mnt/runs \
-  wam-harness-fastwam:cu128 \
+  eazywam-fastwam:cu128 \
   wam-fastwam-libero-eval \
     --cache-dir /mnt/wam-cache \
     --trace-dir /mnt/runs \

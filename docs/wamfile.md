@@ -1,6 +1,6 @@
 # Model Entry Spec
 
-A model entry is the curated unit users see in WAM Harness. It is the WAM
+A model entry is the curated unit users see in EazyWAM. It is the WAM
 analogue of the default layer that makes local model tools easy to use: one
 model id should resolve to the backend, processor, assets, request defaults, and
 known optimization profiles needed to run inference.

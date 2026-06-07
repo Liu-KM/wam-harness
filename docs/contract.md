@@ -1,6 +1,6 @@
 # WAM Deployment Contract
 
-WAM Harness is an Ollama-like local deployment platform for world-action models.
+EazyWAM is an Ollama-like local deployment platform for world-action models.
 The core contract exists to make `wam prepare`, `wam run`, `wam serve`, and
 runtime optimization profiles work across messy upstream WAM/VLA repositories.
 

@@ -1,5 +1,5 @@
-from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.core.registry import Registry, RegistryError, default_registry
+from eazywam.core.manifest import load_builtin_manifest
+from eazywam.core.registry import Registry, RegistryError, default_registry
 
 
 class SingleManifestCatalog:

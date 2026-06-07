@@ -1,6 +1,6 @@
 import pytest
 
-from wam_harness.core.manifest import ManifestError, load_builtin_manifest, manifest_from_dict
+from eazywam.core.manifest import ManifestError, load_builtin_manifest, manifest_from_dict
 
 
 def test_load_builtin_fake_manifest() -> None:

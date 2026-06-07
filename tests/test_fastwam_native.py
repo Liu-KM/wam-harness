@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from wam_harness.backends.fastwam import FastWAMModelAdapter, FastWAMNativeBackendError
-from wam_harness.backends.fastwam import FastWAMRuntimeBundle
-from wam_harness.core.manifest import load_builtin_manifest, manifest_from_dict
-from wam_harness.core.registry import default_registry
-from wam_harness.core.types import ActionChunk, InferenceRequest, InferenceResult, Observation
-from wam_harness.processors.fastwam_libero import FastWAMProcessorError, _future_frames_summary
+from eazywam.backends.fastwam import FastWAMModelAdapter, FastWAMNativeBackendError
+from eazywam.backends.fastwam import FastWAMRuntimeBundle
+from eazywam.core.manifest import load_builtin_manifest, manifest_from_dict
+from eazywam.core.registry import default_registry
+from eazywam.core.types import ActionChunk, InferenceRequest, InferenceResult, Observation
+from eazywam.processors.fastwam_libero import FastWAMProcessorError, _future_frames_summary
 
 
 def test_default_registry_exposes_fastwam_native_backend() -> None:

@@ -1,8 +1,8 @@
 import pytest
 
-from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.core.registry import default_registry
-from wam_harness.core.runtime import RuntimeResolutionError, RuntimeSpec, SERVE_SPEC
+from eazywam.core.manifest import load_builtin_manifest
+from eazywam.core.registry import default_registry
+from eazywam.core.runtime import RuntimeResolutionError, RuntimeSpec, SERVE_SPEC
 
 
 def test_registry_runtime_resolver_maps_reference_entry_to_native_backend(tmp_path) -> None:

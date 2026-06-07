@@ -5,7 +5,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_backend_dockerfiles_install_wam_harness_cli() -> None:
+def test_backend_dockerfiles_install_eazywam_cli() -> None:
     for relative in [
         "containers/fastwam/Dockerfile",
         "containers/cosmos-policy/Dockerfile",
@@ -15,14 +15,14 @@ def test_backend_dockerfiles_install_wam_harness_cli() -> None:
 
         assert "COPY pyproject.toml README.md uv.lock ./" in content
         assert "COPY src ./src" in content
-        assert "/workspace/wam-harness" in content
+        assert "/workspace/eazywam" in content
         assert "wam" in content
 
 
 def test_core_dockerfile_uses_wam_cli_as_default_command() -> None:
     content = (ROOT / "containers/core/Dockerfile").read_text(encoding="utf-8")
 
-    assert 'PATH="/workspace/wam-harness/.venv/bin:${PATH}"' in content
+    assert 'PATH="/workspace/eazywam/.venv/bin:${PATH}"' in content
     assert 'CMD ["wam", "--help"]' in content
 
 
@@ -79,7 +79,7 @@ def test_fastwam_dockerfile_reuses_native_setup_script() -> None:
     assert "ENV WAM_FASTWAM_REPO" not in content
     assert "COPY scripts/setup_fastwam_native_env.sh" in content
     assert "./scripts/setup_fastwam_native_env.sh" in content
-    assert "--harness-dir /workspace/wam-harness" in content
+    assert "--harness-dir /workspace/eazywam" in content
     assert "--clone" in content
 
 
@@ -117,8 +117,8 @@ def test_fastwam_libero_eval_acceptance_script_checks_simulator_env() -> None:
     assert '${model_id}-${workload}-acceptance.json' in content
     assert "cat \"$eval_summary_path\"" in content
     assert "tee \"$acceptance_report_path\"" in content
-    assert "python -m wam_harness.evals.acceptance" in content
-    assert "python -m wam_harness.evals.acceptance --json" in content
+    assert "python -m eazywam.evals.acceptance" in content
+    assert "python -m eazywam.evals.acceptance --json" in content
     assert '"$min_success_rate"' in content
 
 

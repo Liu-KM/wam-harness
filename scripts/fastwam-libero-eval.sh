@@ -39,7 +39,7 @@ Expected acceptance command:
     --download-assets
 
 Re-validate a saved eval summary:
-  python -m wam_harness.evals.acceptance --json \
+  python -m eazywam.evals.acceptance --json \
     /path/to/runs/fastwam-libero-libero-single-task-eval-summary.json \
     1 \
     1.0
@@ -245,8 +245,8 @@ if [[ "$skip_simulator_check" != "1" ]]; then
   run_cmd python - "$model_id" "$workload" "$task_id" "$num_trials" <<'PY'
 import sys
 
-from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.evals.libero import (
+from eazywam.core.manifest import load_builtin_manifest
+from eazywam.evals.libero import (
     _create_libero_env,
     _import_libero_modules,
     _load_task,
@@ -322,11 +322,11 @@ eval_args+=(--summary-path "$eval_summary_path")
 print_cmd wam "${eval_args[@]}"
 wam "${eval_args[@]}" | tee "$eval_raw_output_path"
 cat "$eval_summary_path"
-print_cmd python -m wam_harness.evals.acceptance --json \
+print_cmd python -m eazywam.evals.acceptance --json \
   "$eval_summary_path" \
   "$num_trials" \
   "$min_success_rate"
-python -m wam_harness.evals.acceptance --json \
+python -m eazywam.evals.acceptance --json \
   "$eval_summary_path" \
   "$num_trials" \
   "$min_success_rate" | tee "$acceptance_report_path"

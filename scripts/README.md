@@ -30,7 +30,7 @@ scripts/setup_fastwam_native_env.sh \
 ```
 
 This creates a dedicated `uv` virtual environment for FastWAM when a user cannot
-run a backend container. FastWAM runtime code comes from WAM Harness; an
+run a backend container. FastWAM runtime code comes from EazyWAM; an
 upstream FastWAM checkout is optional and only needed for explicit
 `wam eval --reference` parity checks. The script does not download large model
 assets or submit jobs. With `--clone`, it prepares LIBERO under
@@ -84,7 +84,7 @@ does not depend on stdout parsing.
 You can re-check an existing summary and its trace without rerunning the model:
 
 ```bash
-python -m wam_harness.evals.acceptance --json \
+python -m eazywam.evals.acceptance --json \
   /path/to/runs/fastwam-libero-libero-single-task-eval-summary.json \
   1 \
   1.0
