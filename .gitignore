@@ -32,6 +32,12 @@ datasets/
 checkpoints/
 models/
 weights/
+!src/fastwam/configs/data/
+!src/fastwam/configs/data/**
+!src/fastwam/datasets/
+!src/fastwam/datasets/**
+!src/fastwam/models/
+!src/fastwam/models/**
 *.ckpt
 *.pt
 *.pth

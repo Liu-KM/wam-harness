@@ -165,6 +165,42 @@ script planning/execution for native-migration entries requires explicit
 Full simulator evaluations should keep upstream stdout/stderr as separate files
 and keep the harness trace focused on orchestration metadata.
 
+## Native Simulator Eval Fields
+
+Native simulator evals use the same backend lifecycle and `inference_end`
+events as `wam run`, plus simulator-specific orchestration events:
+
+- `native_eval_plan` with the eval runner name, workload, task id, trial count,
+  action horizon, replan steps, and planned command summary.
+- `episode_start` / `episode_end` for each simulator episode.
+- `replan_start` and `inference_start` before every model call.
+- `simulator_wait_step` for optional no-op stabilization steps.
+- `simulator_step` for each action applied to the simulator.
+- `native_eval_end` with successes, total episodes, success rate, and the
+  results JSON path.
+
+For native FastWAM LIBERO single-task eval, `wam eval fastwam-libero` defaults
+to this path. The official FastWAM scripts remain available only through
+explicit `--reference`.
+
+The acceptance verifier for this path is:
+
+```bash
+python -m wam_harness.evals.acceptance --json SUMMARY_JSON EXPECTED_TRIALS MIN_SUCCESS_RATE
+```
+
+It checks the saved summary and trace rather than rerunning the model. A passing
+native eval summary must not contain `external_eval_plan`, must contain
+`native_eval_end`, must finish with `run_end.status="ok"`, and must point to an
+existing eval results JSON file. The summary metrics, `native_eval_end`, and
+results JSON must agree on total episodes, successes, and success rate; the
+success rate must also meet `MIN_SUCCESS_RATE`. `--json` prints a structured
+acceptance report with the summary, trace, results path, expected trials, and
+success-rate gate. The summary must also include `runtime_info.backend` and
+`runtime_info.mode`, and `runtime_info.backend` must not be `external_eval`.
+The end-to-end wrapper persists that report as
+`<model-id>-<workload>-acceptance.json` beside the eval summary.
+
 ## Native Smoke Fields
 
 `wam native-smoke <model-id>` should emit the normal backend lifecycle events:

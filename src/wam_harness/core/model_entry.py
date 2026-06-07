@@ -276,21 +276,45 @@ def _validate_selected_assets(entry: Manifest, selected_assets: list[str] | None
     if not selected_assets:
         return None
     known = set(entry.assets)
+    groups = _asset_groups(entry)
     selected = []
     unknown = []
     for name in selected_assets:
         value = str(name)
-        if value not in known:
+        if value in known:
+            values = [value]
+        elif value in groups:
+            values = groups[value]
+        else:
             unknown.append(value)
             continue
-        if value not in selected:
-            selected.append(value)
+        for asset_name in values:
+            if asset_name not in known:
+                unknown.append(f"{value}->{asset_name}")
+                continue
+            if asset_name not in selected:
+                selected.append(asset_name)
     if unknown:
-        known_text = ", ".join(sorted(known)) or "<none>"
+        known_values = sorted({*known, *groups})
+        known_text = ", ".join(known_values) or "<none>"
         raise ValueError(
-            f"unknown asset(s) for {entry.id}: {', '.join(unknown)}; known assets: {known_text}"
+            f"unknown asset(s) or asset group(s) for {entry.id}: "
+            f"{', '.join(unknown)}; known assets/groups: {known_text}"
         )
     return selected
+
+
+def _asset_groups(entry: Manifest) -> dict[str, list[str]]:
+    groups: dict[str, list[str]] = {}
+    for name, raw in entry.asset_groups.items():
+        if isinstance(raw, list):
+            values = raw
+        elif isinstance(raw, dict):
+            values = raw.get("assets", [])
+        else:
+            continue
+        groups[str(name)] = _ordered_unique(str(item) for item in values)
+    return groups
 
 
 def _expected_asset_path(local_path: object, cache_dir: Path) -> Path | None:
@@ -474,7 +498,7 @@ def _backend_next_steps(
         ]
     )
     if missing_assets:
-        asset_args = " ".join(f"--asset {name}" for name in missing_assets)
+        asset_args = _asset_prepare_args(entry, missing_assets)
         steps.append(
             f"Prepare missing backend assets: wam prepare {entry.id} "
             f"--cache-dir {cache_dir} --download {asset_args}."
@@ -488,6 +512,19 @@ def _backend_next_steps(
         )
 
     return steps
+
+
+def _asset_prepare_args(entry: Manifest, missing_assets: list[str]) -> str:
+    remaining = list(missing_assets)
+    args: list[str] = []
+    for group_name, group_assets in _asset_groups(entry).items():
+        if len(group_assets) <= 1:
+            continue
+        if all(asset in remaining for asset in group_assets):
+            args.append(f"--asset {group_name}")
+            remaining = [asset for asset in remaining if asset not in group_assets]
+    args.extend(f"--asset {name}" for name in remaining)
+    return " ".join(args)
 
 
 def _backend_requirements(backend: object) -> object | None:

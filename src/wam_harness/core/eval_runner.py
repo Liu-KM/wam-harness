@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,7 @@ class EvalSummary:
     stdout_path: Path | None
     stderr_path: Path | None
     runtime_info: RuntimeInfo
+    metrics: JsonDict = field(default_factory=dict)
 
     def to_dict(self) -> JsonDict:
         return {
@@ -59,6 +60,7 @@ class EvalSummary:
             "stdout_path": str(self.stdout_path) if self.stdout_path is not None else None,
             "stderr_path": str(self.stderr_path) if self.stderr_path is not None else None,
             "runtime_info": self.runtime_info.to_dict(),
+            "metrics": self.metrics,
         }
 
 
@@ -98,6 +100,33 @@ class EvalRunner:
             raise EvalRunnerError(f"{manifest.id} does not declare an eval command")
 
         eval_workload = self._select_eval_workload(manifest, workload)
+        native_runner_name = self._native_eval_runner_name(manifest, eval_workload)
+        if not reference and native_runner_name is not None:
+            runner = self.registry.create_eval_runner(native_runner_name)
+            run = getattr(runner, "run", None)
+            if not callable(run):
+                raise EvalRunnerError(
+                    f"eval runner '{native_runner_name}' does not expose run()"
+                )
+            return run(
+                model_id=model_id,
+                reference_manifest=manifest,
+                eval_workload=eval_workload.name,
+                eval_config=eval_workload.config,
+                enabled_opts=enabled_opts,
+                trace_dir=trace_dir,
+                cache_dir=cache_dir,
+                upstream_dir=upstream_dir,
+                dry_run=dry_run,
+                overrides=overrides or {},
+            )
+        if not reference:
+            raise EvalRunnerError(
+                f"{manifest.id} eval workload '{eval_workload.name}' does not declare "
+                "a native product eval runner yet; pass --reference to run the official "
+                "upstream evaluator."
+            )
+
         profiles = self.registry.build_optimization_profiles(manifest, enabled_opts or [])
         run_id = uuid.uuid4().hex[:12]
         output_dir = (Path(trace_dir) / run_id) if trace_dir is not None else Path("runs") / run_id
@@ -463,6 +492,25 @@ class EvalRunner:
         if "command" in eval_workload.config:
             return eval_workload.config.get("command")
         return manifest.eval.get("command")
+
+    def _native_eval_runner_name(
+        self,
+        manifest: Manifest,
+        eval_workload: _EvalWorkload,
+    ) -> str | None:
+        config = eval_workload.config.get("native")
+        if config is None:
+            config = manifest.eval.get("native")
+        if config is None:
+            return None
+        if isinstance(config, str):
+            return config
+        if isinstance(config, dict):
+            runner = config.get("runner")
+            return str(runner) if runner is not None else None
+        raise EvalRunnerError(
+            f"{manifest.id} eval native runner declaration must be a string or mapping"
+        )
 
     def _merged_eval_mapping(
         self,

@@ -1,3 +1,5 @@
+import pytest
+
 from wam_harness.core.manifest import ManifestError, load_builtin_manifest, manifest_from_dict
 
 
@@ -17,6 +19,16 @@ def test_fastwam_libero_manifest_matches_upstream_action_defaults() -> None:
     assert manifest.processor["action"]["dim"] == 7
     assert manifest.defaults["action_horizon"] == 32
     assert manifest.defaults["replan_steps"] == 10
+    assert manifest.asset_groups["eval"]["assets"] == [
+        "checkpoint",
+        "dataset_stats",
+        "wan22_vae",
+        "wan22_t5_encoder",
+        "wan21_tokenizer_spiece",
+        "wan21_tokenizer_json",
+        "wan21_tokenizer_config",
+        "wan21_special_tokens_map",
+    ]
 
 
 def test_dreamzero_manifest_matches_native_action_contract() -> None:
@@ -35,7 +47,7 @@ def test_fastwam_libero_manifest_records_native_migration_status() -> None:
     assert manifest.deployment["reference_path"] == "official_script"
     assert manifest.deployment["product_path"] == "native_backend_migration"
     assert manifest.deployment["native_backend"] == "fastwam"
-    assert manifest.deployment["native_stage"] == "native_smoke_verified"
+    assert manifest.deployment["native_stage"] == "vendored_native_smoke_verified"
     assert manifest.deployment["native_verified"] is True
     assert manifest.deployment["simulator_eval"] == "single_task_verified"
     assert manifest.deployment["parity_verified"] is False
@@ -65,10 +77,13 @@ def test_dreamzero_manifest_records_native_smoke_pass() -> None:
 def test_fastwam_libero_single_task_is_eval_workload_not_model_id() -> None:
     manifest = load_builtin_manifest("fastwam-libero")
 
-    assert manifest.eval["default_workload"] == "libero-manager"
+    assert manifest.eval["default_workload"] == "libero-single-task"
     assert "libero-manager" in manifest.eval["workloads"]
     assert "libero-single-task" in manifest.eval["workloads"]
     assert manifest.eval["workloads"]["libero-single-task"]["defaults"]["task_id"] == "0"
+    assert manifest.eval["workloads"]["libero-single-task"]["native"]["runner"] == (
+        "libero_single_task"
+    )
 
 
 def test_manifest_requires_backend_name() -> None:
@@ -81,3 +96,19 @@ def test_manifest_requires_backend_name() -> None:
         assert "backend" in str(exc)
     else:
         raise AssertionError("manifest missing backend name should fail")
+
+
+def test_manifest_rejects_asset_group_with_unknown_asset() -> None:
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["asset_groups"]["broken"] = {"assets": ["checkpoint", "missing"]}
+
+    with pytest.raises(ManifestError, match="asset group 'broken'.*missing"):
+        manifest_from_dict(data)
+
+
+def test_manifest_rejects_asset_group_with_non_list_assets() -> None:
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["asset_groups"]["broken"] = {"assets": "checkpoint"}
+
+    with pytest.raises(ManifestError, match="asset group 'broken'.*assets.*list"):
+        manifest_from_dict(data)

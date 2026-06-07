@@ -222,12 +222,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0 if not args.strict or summary.status == "ok" else 1
 
     if args.command == "prepare":
-        summary = prepare_model_entry(
-            args.model_id,
-            cache_dir=args.cache_dir,
-            download=args.download,
-            selected_assets=args.asset or None,
-        )
+        try:
+            summary = prepare_model_entry(
+                args.model_id,
+                cache_dir=args.cache_dir,
+                download=args.download,
+                selected_assets=args.asset or None,
+            )
+        except ValueError as exc:
+            _print_cli_error(exc)
+            return 2
         print(render_prepare(summary))
         return 0 if summary.status == "ok" else 1
 

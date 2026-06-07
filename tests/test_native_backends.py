@@ -39,10 +39,6 @@ def _native_manifest(model_id: str, backend_name: str, tmp_path):
 
 def _write_fastwam_required_paths(repo) -> None:
     paths = [
-        "src/fastwam/runtime.py",
-        "src/fastwam/utils/config_resolvers.py",
-        "src/fastwam/datasets/lerobot/robot_video_dataset.py",
-        "src/fastwam/datasets/lerobot/utils/normalizer.py",
         "configs/sim_libero.yaml",
         "configs/train.yaml",
         "configs/data/libero_2cam.yaml",
@@ -53,6 +49,53 @@ def _write_fastwam_required_paths(repo) -> None:
         path = repo / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# smoke\n", encoding="utf-8")
+
+
+def _write_fastwam_eval_assets(cache_dir) -> None:
+    paths = [
+        cache_dir / "checkpoints" / "fastwam_release" / "libero_uncond_2cam224.pt",
+        cache_dir
+        / "checkpoints"
+        / "fastwam_release"
+        / "libero_uncond_2cam224_dataset_stats.json",
+        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B" / "Wan2.2_VAE.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.2-TI2V-5B"
+        / "models_t5_umt5-xxl-enc-bf16.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "spiece.model",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer_config.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "special_tokens_map.json",
+    ]
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("asset\n", encoding="utf-8")
 
 
 def _write_cosmos_required_paths(repo) -> None:
@@ -252,8 +295,12 @@ def test_native_backend_declares_and_checks_upstream_requirements(tmp_path) -> N
     assert requirements.runtime_assets == [
         "checkpoint",
         "dataset_stats",
-        "model_base",
-        "tokenizer_components",
+        "wan22_vae",
+        "wan22_t5_encoder",
+        "wan21_tokenizer_spiece",
+        "wan21_tokenizer_json",
+        "wan21_tokenizer_config",
+        "wan21_special_tokens_map",
     ]
     assert requirements.required_python_modules == [
         "torch",
@@ -268,11 +315,6 @@ def test_native_backend_declares_and_checks_upstream_requirements(tmp_path) -> N
     assert requirements.upstream.status == "present"
     assert requirements.upstream.selected == str(repo.resolve())
     assert requirements.upstream.required_paths == [
-        "src/fastwam/runtime.py",
-        "src/fastwam/utils/config_resolvers.py",
-        "src/fastwam/datasets/lerobot/robot_video_dataset.py",
-        "src/fastwam/datasets/lerobot/utils/normalizer.py",
-        "configs/sim_libero.yaml",
         "configs/train.yaml",
         "configs/task/libero_uncond_2cam224_1e-4.yaml",
         "configs/data/libero_2cam.yaml",
@@ -282,7 +324,14 @@ def test_native_backend_declares_and_checks_upstream_requirements(tmp_path) -> N
     assert requirements.upstream.commit_status == "unknown"
     assert readiness.status == "blocked"
     assert readiness.missing_required_assets == ["checkpoint", "dataset_stats"]
-    assert readiness.missing_runtime_assets == ["model_base", "tokenizer_components"]
+    assert readiness.missing_runtime_assets == [
+        "wan22_vae",
+        "wan22_t5_encoder",
+        "wan21_tokenizer_spiece",
+        "wan21_tokenizer_json",
+        "wan21_tokenizer_config",
+        "wan21_special_tokens_map",
+    ]
     assert "torch" in readiness.missing_python_modules
 
 
@@ -343,7 +392,14 @@ def test_native_backend_readiness_warns_when_only_runtime_assets_are_missing(
     assert readiness.to_dict()["runtime_mode"] == "in_process"
     assert readiness.to_dict()["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness.missing_required_assets == []
-    assert readiness.missing_runtime_assets == ["model_base", "tokenizer_components"]
+    assert readiness.missing_runtime_assets == [
+        "wan22_vae",
+        "wan22_t5_encoder",
+        "wan21_tokenizer_spiece",
+        "wan21_tokenizer_json",
+        "wan21_tokenizer_config",
+        "wan21_special_tokens_map",
+    ]
 
 
 def test_native_backend_readiness_is_ready_when_fastwam_runtime_assets_are_in_cache(
@@ -359,8 +415,40 @@ def test_native_backend_readiness_is_ready_when_fastwam_runtime_assets_are_in_ca
         / "checkpoints"
         / "fastwam_release"
         / "libero_uncond_2cam224_dataset_stats.json",
-        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B",
-        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.1-T2V-1.3B",
+        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B" / "Wan2.2_VAE.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.2-TI2V-5B"
+        / "models_t5_umt5-xxl-enc-bf16.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "spiece.model",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer_config.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "special_tokens_map.json",
     ]
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -382,6 +470,34 @@ def test_native_backend_readiness_is_ready_when_fastwam_runtime_assets_are_in_ca
     assert readiness.missing_runtime_assets == []
 
 
+def test_fastwam_vendored_runtime_readiness_does_not_require_upstream_repo(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("WAM_FASTWAM_REPO", raising=False)
+    registry = default_registry()
+    cache_dir = tmp_path / "cache"
+    _write_fastwam_eval_assets(cache_dir)
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["backend"] = {
+        "name": "fastwam",
+        "mode": "native",
+        "config": {"cache_dir": str(cache_dir)},
+    }
+    manifest = manifest_from_dict(data)
+    backend = registry.create_backend(manifest, [])
+    backend.required_python_modules = ()
+
+    readiness = backend.native_readiness()
+
+    assert readiness.status == "ready"
+    assert readiness.requirements.upstream.status == "present"
+    assert readiness.requirements.upstream.commit_status == "vendored"
+    assert readiness.requirements.upstream.required_paths == []
+    assert readiness.missing_required_assets == []
+    assert readiness.missing_runtime_assets == []
+
+
 def test_native_backend_readiness_warns_on_upstream_commit_mismatch(
     tmp_path,
 ) -> None:
@@ -395,8 +511,40 @@ def test_native_backend_readiness_warns_on_upstream_commit_mismatch(
         / "checkpoints"
         / "fastwam_release"
         / "libero_uncond_2cam224_dataset_stats.json",
-        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B",
-        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.1-T2V-1.3B",
+        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B" / "Wan2.2_VAE.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.2-TI2V-5B"
+        / "models_t5_umt5-xxl-enc-bf16.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "spiece.model",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer_config.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "special_tokens_map.json",
     ]
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -433,8 +581,40 @@ def test_native_backend_readiness_blocks_when_python_modules_are_missing(
         / "checkpoints"
         / "fastwam_release"
         / "libero_uncond_2cam224_dataset_stats.json",
-        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B",
-        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.1-T2V-1.3B",
+        cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B" / "Wan2.2_VAE.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.2-TI2V-5B"
+        / "models_t5_umt5-xxl-enc-bf16.pth",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "spiece.model",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer_config.json",
+        cache_dir
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "special_tokens_map.json",
     ]
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)

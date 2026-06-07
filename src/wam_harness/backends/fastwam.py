@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
 from wam_harness.backends.native import (
     NativeBackendBase,
     NativeBackendError,
+    NativeUpstreamStatus,
     NativeModelAdapter,
     NativeModelCall,
     NativeRuntimeLoader,
@@ -67,14 +70,14 @@ class FastWAMRuntimeLoader(NativeRuntimeLoader):
     def load(
         self,
         *,
-        repo: Path,
+        config_dir: Path,
         checkpoint_path: Path,
         dataset_stats_path: Path,
     ) -> FastWAMRuntimeBundle:
         modules = self._import_runtime_modules()
         self.backend._register_fastwam_config_resolvers()
         cfg = self.backend._compose_fastwam_config(
-            repo,
+            config_dir,
             modules.hydra,
             modules.global_hydra,
         )
@@ -126,8 +129,8 @@ class FastWAMRuntimeLoader(NativeRuntimeLoader):
         except ModuleNotFoundError as exc:
             raise self.backend.error_cls(
                 "FastWAM native backend dependencies are not importable. "
-                "Run inside a FastWAM-compatible container and set "
-                "WAM_FASTWAM_REPO=/path/to/FastWAM."
+                "Run inside a FastWAM-compatible container or install the "
+                "self-managed FastWAM runtime environment."
             ) from exc
 
 
@@ -261,25 +264,23 @@ class FastWAMModelAdapter(NativeModelAdapter):
 class FastWAMBackend(NativeBackendBase):
     """Native FastWAM backend.
 
-    This backend imports upstream FastWAM code only inside ``load`` so the core
-    harness remains lightweight and importable outside a FastWAM container.
+    This backend imports the vendored FastWAM runtime only inside ``load`` so
+    the core harness remains lightweight outside a FastWAM container.
     """
 
     error_cls = FastWAMNativeBackendError
     default_upstream_env = "WAM_FASTWAM_REPO"
-    required_upstream_paths = (
-        "src/fastwam/runtime.py",
-        "src/fastwam/utils/config_resolvers.py",
-        "src/fastwam/datasets/lerobot/robot_video_dataset.py",
-        "src/fastwam/datasets/lerobot/utils/normalizer.py",
-        "configs/sim_libero.yaml",
-    )
+    required_upstream_paths = ()
     required_asset_names = ("checkpoint", "dataset_stats")
     runtime_asset_names = (
         "checkpoint",
         "dataset_stats",
-        "model_base",
-        "tokenizer_components",
+        "wan22_vae",
+        "wan22_t5_encoder",
+        "wan21_tokenizer_spiece",
+        "wan21_tokenizer_json",
+        "wan21_tokenizer_config",
+        "wan21_special_tokens_map",
     )
     required_python_modules = (
         "torch",
@@ -301,25 +302,16 @@ class FastWAMBackend(NativeBackendBase):
         self.dataset_stats_path = None
         self.runtime_loader = FastWAMRuntimeLoader(self)
 
-    def native_required_upstream_paths(self) -> tuple[str, ...]:
-        paths = [
-            *super().native_required_upstream_paths(),
-            "configs/train.yaml",
-            *self._hydra_config_group_paths(),
-        ]
-        return tuple(dict.fromkeys(paths))
-
     def load(self) -> None:
-        repo = self.resolve_upstream_repo()
+        config_dir = self._fastwam_config_dir()
         checkpoint_path = self.resolve_required_asset("checkpoint")
         dataset_stats_path = self.resolve_required_asset("dataset_stats")
         self.checkpoint_path = checkpoint_path
         self.dataset_stats_path = dataset_stats_path
         self._apply_runtime_env()
-        self.add_upstream_paths(repo, repo / "src", repo / "experiments" / "libero")
 
         runtime = self.runtime_loader.load(
-            repo=repo,
+            config_dir=config_dir,
             checkpoint_path=checkpoint_path,
             dataset_stats_path=dataset_stats_path,
         )
@@ -345,7 +337,7 @@ class FastWAMBackend(NativeBackendBase):
             model=runtime.model,
             cfg=runtime.cfg,
         )
-        self.upstream_repo = repo
+        self.upstream_repo = config_dir
         self.loaded = True
 
     def warmup(self) -> None:
@@ -387,17 +379,71 @@ class FastWAMBackend(NativeBackendBase):
             return adapter
         raise self.error_cls("FastWAM model is not loaded")
 
-    def _compose_fastwam_config(self, repo: Path, hydra: Any, global_hydra: Any) -> Any:
+    def inspect_upstream_repo(
+        self,
+        *,
+        default_env: str | None = None,
+        required_paths: list[str] | tuple[str, ...] | None = None,
+    ) -> NativeUpstreamStatus:
+        if self.config.get("upstream_dir") or self.upstream_candidates(
+            env_name=self.upstream_env_name(default_env=default_env),
+            default_dir=None,
+        ):
+            return super().inspect_upstream_repo(
+                default_env=default_env,
+                required_paths=required_paths or self.native_required_upstream_paths(),
+            )
+        config_dir = self._vendored_config_dir()
+        return NativeUpstreamStatus(
+            env_var=self.upstream_env_name(default_env=default_env),
+            default_dir=None,
+            candidates=[str(config_dir)],
+            selected=str(config_dir),
+            required_paths=[],
+            missing_paths=[],
+            status="present",
+            expected_commit="45d8e14",
+            selected_commit="vendored:45d8e1458921d83f8ad6cf9ce993d371208dabd0",
+            commit_status="vendored",
+        )
+
+    def native_required_upstream_paths(self) -> tuple[str, ...]:
+        env_name = self.upstream_env_name(default_env=None)
+        if not (self.config.get("upstream_dir") or os.environ.get(env_name)):
+            return ()
+        paths = [
+            "configs/train.yaml",
+            *self._hydra_config_group_paths(),
+        ]
+        return tuple(dict.fromkeys(paths))
+
+    def _compose_fastwam_config(self, config_dir: Path, hydra: Any, global_hydra: Any) -> Any:
         config_name = str(self.config.get("config_name", "sim_libero"))
         overrides = self._hydra_overrides()
         instance = global_hydra.GlobalHydra.instance()
         if instance.is_initialized():
             instance.clear()
         with hydra.initialize_config_dir(
-            config_dir=str(repo / "configs"),
+            config_dir=str(config_dir),
             version_base="1.3",
         ):
             return hydra.compose(config_name=config_name, overrides=overrides)
+
+    def _fastwam_config_dir(self) -> Path:
+        explicit = self.config.get("upstream_dir")
+        if explicit:
+            config_dir = Path(str(explicit)).expanduser() / "configs"
+            if not config_dir.exists():
+                raise self.error_cls(
+                    f"FastWAM config directory not found at {config_dir}. "
+                    "Omit --upstream-dir to use the vendored WAM Harness runtime, "
+                    "or pass a FastWAM checkout that contains configs/."
+                )
+            return config_dir
+        return self._vendored_config_dir()
+
+    def _vendored_config_dir(self) -> Path:
+        return Path(str(resources.files("fastwam").joinpath("configs"))).resolve()
 
     def _register_fastwam_config_resolvers(self) -> None:
         try:
@@ -479,11 +525,16 @@ class FastWAMBackend(NativeBackendBase):
 
     def _diffsynth_model_base_path(self) -> Path | str | None:
         model_base = self.optional_asset_path("model_base")
+        if model_base is None:
+            model_base = self.optional_asset_path("wan22_vae")
         if model_base is not None:
             # DiffSynth expects the cache root, while the Wamfile points at a
-            # specific HF repo directory such as Wan-AI/Wan2.2-TI2V-5B.
-            if model_base.parent.name == "Wan-AI":
-                return model_base.parent.parent
+            # specific HF repo directory or file such as
+            # Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth.
+            parts = model_base.parts
+            if "Wan-AI" in parts:
+                index = parts.index("Wan-AI")
+                return Path(*parts[:index]) if index else Path(".")
             return model_base.parent
         return self.eval_defaults().get("diffsynth_model_base_path")
 

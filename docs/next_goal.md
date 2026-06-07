@@ -46,14 +46,14 @@ in-process PyTorch module.
   parity exists.
 - Add processor registry support so model entries can resolve processor names.
   Done.
-- Add shared native backend support for repo discovery, asset resolution, and
-  runtime metadata. Done via `NativeBackendBase`.
+- Add shared native backend support for optional repo discovery, asset
+  resolution, and runtime metadata. Done via `NativeBackendBase`.
 
 ### 2. Native Backend Skeletons
 
 - Add `FastWAMBackend` with `load`, `warmup`, `reset`, `infer`, and
-  `runtime_info`. Skeleton is in place and dynamically imports FastWAM only
-  inside `load`.
+  `runtime_info`. The runtime is now vendored under `src/fastwam` and imported
+  only inside `load`.
 - Add `FastWAMLiberoProcessor`. Skeleton is in place and owns LIBERO image,
   proprio, prompt, action denormalization, and gripper conversion logic.
 - Add `CosmosPolicyBackend` and `CosmosPolicyLiberoProcessor`. Skeleton is in
@@ -61,8 +61,9 @@ in-process PyTorch module.
   `get_action` as the native inference boundary.
 - Add `DreamZeroBackend` and `DreamZeroDroidProcessor`. Skeleton is in place as
   a harness-owned resident WebSocket policy server backend.
-- Fail early with clear asset/runtime errors if upstream code or assets are not
-  available. Covered by tests for missing upstream repo.
+- Fail early with clear asset/runtime errors if optional upstream override,
+  Python modules, or assets are not available. FastWAM no longer requires an
+  upstream repo on the product path.
 - Keep official eval/server scripts as reference mode until native parity exists.
 
 ### 3. Native Smoke And Parity
@@ -73,8 +74,8 @@ in-process PyTorch module.
 - Keep `native-smoke` extensible: the native backend key must come from
   `backend.config.native_backend`, and the synthetic observation must come from
   the registered processor.
-- Validate the native backend inside the FastWAM container with upstream
-  dependencies, checkpoint, and dataset stats mounted.
+- Validate the native backend inside the FastWAM container with vendored
+  runtime code, checkpoint, dataset stats, and runtime assets mounted.
 - Validate Cosmos-Policy native backend inside the Cosmos container with
   checkpoint, dataset stats, and text embeddings mounted.
 - Validate DreamZero resident backend inside the DreamZero container with a
@@ -87,7 +88,7 @@ in-process PyTorch module.
 Container smoke commands:
 
 ```bash
-wam native-smoke fastwam-libero --upstream-dir /path/to/FastWAM --require-ready
+wam native-smoke fastwam-libero --require-ready
 wam native-smoke cosmos-policy-libero --upstream-dir /path/to/cosmos-policy --require-ready
 wam native-smoke dreamzero-droid-sim --upstream-dir /path/to/dreamzero --require-ready
 ```
@@ -105,7 +106,9 @@ simple public path of `wam info`, `wam doctor`, `wam prepare`, and `wam run`.
 ## Non-Goals
 
 - Do not rewrite upstream model architectures.
-- Do not vendor upstream repositories into core.
+- Do not vendor upstream repositories into core. If product runtime code is
+  vendored, keep it isolated under a backend/runtime package with provenance
+  and license metadata.
 - Do not delete official reference scripts before native parity exists.
 - Do not default-enable experimental optimizations.
 - Do not make `prepare` install environments.

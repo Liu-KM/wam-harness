@@ -13,6 +13,7 @@ def default_registry() -> Registry:
     from wam_harness.processors.dreamzero_droid import DreamZeroDroidProcessor
     from wam_harness.processors.fastwam_libero import FastWAMLiberoProcessor
     from wam_harness.processors.passthrough import PassthroughProcessor
+    from wam_harness.evals.libero import LiberoSingleTaskEvalRunner
     from wam_harness.workloads.open_loop import OpenLoopWorkload
 
     registry = Registry()
@@ -28,6 +29,10 @@ def default_registry() -> Registry:
     )
     registry.register_processor("dreamzero_droid", DreamZeroDroidProcessor.from_manifest)
     registry.register_workload("open_loop", OpenLoopWorkload.from_manifest)
+    registry.register_eval_runner(
+        "libero_single_task",
+        lambda current_registry: LiberoSingleTaskEvalRunner(current_registry),
+    )
     registry.register_runtime_resolver(native_runtime_resolver)
     registry.register_optimization("fake_cache", {"cache_scope": "replan"})
     registry.register_optimization("action_chunk_scheduling", {})

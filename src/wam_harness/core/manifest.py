@@ -43,12 +43,16 @@ def manifest_from_dict(data: dict[str, Any]) -> Manifest:
     if not isinstance(optimizations, dict) or "supported" not in optimizations:
         raise ManifestError("manifest optimizations must contain supported profiles")
 
+    assets = dict(data.get("assets", {}))
+    asset_groups = _validate_asset_groups(data.get("asset_groups", {}), assets)
+
     return Manifest(
         schema_version=int(data["schema_version"]),
         id=str(data["id"]),
         display_name=str(data["display_name"]),
         source=dict(data["source"]),
-        assets=dict(data.get("assets", {})),
+        assets=assets,
+        asset_groups=asset_groups,
         backend=dict(data["backend"]),
         processor=dict(data["processor"]),
         workload=dict(data["workload"]),
@@ -58,6 +62,37 @@ def manifest_from_dict(data: dict[str, Any]) -> Manifest:
         eval=dict(data.get("eval", {})),
         known_gaps=[str(item) for item in data.get("known_gaps", [])],
     )
+
+
+def _validate_asset_groups(raw_groups: object, assets: dict[str, Any]) -> dict[str, Any]:
+    if raw_groups is None:
+        return {}
+    if not isinstance(raw_groups, dict):
+        raise ManifestError("manifest asset_groups must be a mapping")
+
+    known_assets = set(assets)
+    groups: dict[str, Any] = {}
+    for name, raw in raw_groups.items():
+        group_name = str(name)
+        if isinstance(raw, list):
+            group_assets = raw
+            groups[group_name] = [str(item) for item in group_assets]
+        elif isinstance(raw, dict):
+            group_assets = raw.get("assets")
+            if not isinstance(group_assets, list):
+                raise ManifestError(f"asset group '{group_name}' assets must be a list")
+            group_data = dict(raw)
+            group_data["assets"] = [str(item) for item in group_assets]
+            groups[group_name] = group_data
+        else:
+            raise ManifestError(f"asset group '{group_name}' must be a list or mapping")
+
+        missing = sorted(str(item) for item in group_assets if str(item) not in known_assets)
+        if missing:
+            raise ManifestError(
+                f"asset group '{group_name}' references unknown asset(s): {', '.join(missing)}"
+            )
+    return groups
 
 
 def load_manifest(path: str | Path) -> Manifest:

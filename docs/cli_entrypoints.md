@@ -38,15 +38,14 @@ out of the first user-facing flow.
 | `wam serve <model>` | Start a local or job-local policy server. | Keep a model resident for repeated observation-to-action calls. |
 | `wam compare <run-a> <run-b>` | Compare two recorded runs. | Report latency, memory, output drift, and optimization profile differences. |
 
-For FastWAM, the first real simulator workload is the official LIBERO
-single-task smoke path:
+For FastWAM, the first product simulator workload is the harness-owned LIBERO
+single-task loop:
 
 ```bash
 wam eval fastwam-libero \
   --workload libero-single-task \
   --task-id 0 \
-  --num-trials 1 \
-  --upstream-dir /mnt/upstreams/FastWAM
+  --num-trials 1
 ```
 
 Explicit reference mode stays available for parity runs and comparisons:
@@ -68,7 +67,30 @@ reuse the same checkpoint, processor, and action schema.
 `wam eval` is a simulator workflow, not a resident inference backend. `wam run
 --input` and `wam serve` keep using the native observation-to-action product
 path; `wam eval` runs the curated simulator workload declared by the model
-entry and records stdout/stderr plus trace metadata.
+entry and records episode metrics plus trace metadata. Explicit `--reference`
+evals record stdout/stderr from the upstream official script.
+
+For FastWAM LIBERO, the portable acceptance wrapper is:
+
+```bash
+scripts/fastwam-libero-eval.sh \
+  --cache-dir /mnt/wam-cache \
+  --trace-dir runs \
+  --download-assets
+```
+
+It runs prepare, doctor, simulator preflight, native smoke, native eval, then
+validates the saved summary and writes an acceptance report:
+
+```bash
+python -m wam_harness.evals.acceptance --json \
+  runs/fastwam-libero-libero-single-task-eval-summary.json \
+  1 \
+  1.0
+```
+
+The wrapper saves the report as
+`runs/fastwam-libero-libero-single-task-acceptance.json`.
 
 ## Compare Output
 
@@ -133,12 +155,11 @@ For a one-command job-local server check with a real observation payload, pass
 wam serve fastwam-libero \
   --smoke \
   --smoke-input examples/fastwam_libero/obs.json \
-  --cache-dir /mnt/wam-cache \
-  --upstream-dir /mnt/upstreams/FastWAM
+  --cache-dir /mnt/wam-cache
 ```
 
-When the backend container or job mounts upstream source outside the model
-entry's default path, pass it explicitly:
+FastWAM product-path serving uses the vendored runtime. When intentionally
+debugging against a separate FastWAM checkout, pass it explicitly:
 
 ```bash
 wam serve fastwam-libero \
@@ -165,20 +186,18 @@ Example:
 
 ```bash
 wam native-smoke fastwam-libero \
-  --cache-dir /mnt/wam-cache \
-  --upstream-dir /path/to/FastWAM
+  --cache-dir /mnt/wam-cache
 ```
 
 `native-smoke` writes native readiness before model load. If readiness is
 `blocked`, it fails immediately with a `preflight` trace error instead of
-trying to import or load the upstream model. Add `--require-ready` for stricter
+trying to import or load the model. Add `--require-ready` for stricter
 container smoke runs where runtime assets such as tokenizer or model-base caches
 must also be present before load:
 
 ```bash
 wam native-smoke fastwam-libero \
   --cache-dir /mnt/wam-cache \
-  --upstream-dir /path/to/FastWAM \
   --require-ready
 ```
 
@@ -201,8 +220,7 @@ and does not use synthetic smoke observations.
 wam run fastwam-libero \
   --input obs.json \
   --output action.json \
-  --cache-dir /mnt/wam-cache \
-  --upstream-dir /mnt/upstreams/FastWAM
+  --cache-dir /mnt/wam-cache
 ```
 
 If `--input` is omitted for a real WAM, `wam run` prints the next choices:
@@ -224,7 +242,7 @@ observation, use `wam native-smoke <model>` instead.
 
 `pull` is familiar from Docker and Ollama, but WAMs are not just one model blob.
 A runnable WAM entry may need checkpoints, dataset statistics, tokenizer or VAE
-components, simulator assets, upstream code, and a backend container. `prepare`
+components, simulator assets, or a backend container. `prepare`
 sets the right expectation only if its boundary is strict: it prepares model
 assets and cache state, or tells the user what is still missing.
 
@@ -262,17 +280,22 @@ wam prepare fastwam-libero \
   --asset checkpoint
 ```
 
-Runtime assets use the same cache boundary. For FastWAM, `model_base` and
-`tokenizer_components` resolve under `--cache-dir/diffsynth-models/...`; they
-are large, so prepare them only when the backend runtime is ready to run:
+Runtime assets use the same cache boundary. For FastWAM LIBERO, the verified
+official-eval set is exposed as the `eval` asset group. It includes the
+FastWAM checkpoint and dataset stats plus the specific Wan VAE, T5 encoder, and
+Wan2.1 tokenizer files that the released evaluator loads. It does not download
+the full Wan2.2 repository snapshot or a full Wan2.1 T2V model snapshot:
 
 ```bash
 wam prepare fastwam-libero \
   --cache-dir /mnt/wam-cache \
   --download \
-  --asset model_base \
-  --asset tokenizer_components
+  --asset eval
 ```
+
+The legacy aliases `--asset model_base` and `--asset tokenizer_components`
+remain accepted as asset groups, but they expand to specific files instead of
+repository snapshots.
 
 This still stays inside the asset/cache boundary. It does not install the
 backend environment, clone upstream source code, build containers, or submit
@@ -327,7 +350,7 @@ Task: LIBERO simulator evaluation
 Inputs: primary camera, wrist camera, robot state, task prompt
 Outputs: action chunks; horizon=32; dim=7
 Runtime: GPU container recommended
-Deployment: product=native_backend_migration; reference=official_script; native=fastwam (native_smoke_verified); native_verified=true; parity_verified=false; next=full_libero_eval
+Deployment: product=native_backend_migration; reference=official_script; native=fastwam (vendored_native_smoke_verified); native_verified=true; parity_verified=false; next=full_libero_eval
 Prepare: checkpoint and dataset stats required
 Optimizations: action_chunk_scheduling
 ```
@@ -345,10 +368,9 @@ Runtime:
 
 Model:
   checkpoint: missing
-  upstream repo: missing
+  runtime source: vendored
 
 Native next steps:
-  Set WAM_FASTWAM_REPO=<repo> or pass --upstream-dir <repo>
   wam prepare fastwam-libero --cache-dir /mnt/wam-cache --download --asset checkpoint
   Run inside the backend container or install native dependencies
 ```
@@ -357,8 +379,8 @@ Native next steps:
 concrete asset step. It should not silently assume a specific scheduler,
 cluster, host path, or environment installation.
 
-For native backend migration, maintainers can point `doctor` at a mounted
-upstream repository:
+FastWAM native runtime is vendored. For reference-eval parity or debugging,
+maintainers can still point `doctor` at a mounted upstream repository:
 
 ```bash
 wam doctor fastwam-libero --upstream-dir /mnt/upstreams/FastWAM
@@ -370,13 +392,13 @@ strict mode before `native-smoke`:
 ```bash
 wam doctor fastwam-libero \
   --cache-dir /mnt/wam-cache \
-  --upstream-dir /mnt/upstreams/FastWAM \
   --json \
   --strict
 ```
 
 `--json` exposes cache status, asset paths, deployment status, and native
-readiness, including the selected upstream repo path and commit when available.
+readiness, including the selected vendored runtime source or upstream override
+path and commit when available.
 `--strict` returns non-zero when the status is not `ok`, so scripts can stop
 before attempting a heavy native load.
 
@@ -385,7 +407,8 @@ Doctor status is intentionally simple: `ok` means the checked path is runnable,
 native backend is known to fail before `load()` because a hard preflight item is
 missing.
 
-This checks the model entry's declared native backend, required upstream files,
-expected upstream commit, required Python modules in the current environment,
-and required assets. It does not install the upstream repository, build an
-image, submit a job, or start a server.
+This checks the model entry's declared native backend, optional upstream files
+when an upstream override is supplied, expected upstream commit when relevant,
+required Python modules in the current environment, and required assets. It
+does not install a reference repository, build an image, submit a job, or start
+a server.

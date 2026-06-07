@@ -99,12 +99,13 @@ Goal: make one real curated WAM run through the public path.
 
 - `fastwam-libero` model entry.
 - Asset prepare plan for checkpoint, dataset stats, and required model files.
-- Simulator eval adapter retained for curated LIBERO workloads and explicit reference mode.
+- Harness-owned simulator eval loop for curated LIBERO workloads; official
+  scripts retained only behind explicit reference mode.
 - FastWAM processor metadata for observations, action chunks, and optional future output.
 - FastWAM container recipe and self-managed setup script.
 - First LIBERO single-task simulator evaluation through
   `wam eval fastwam-libero --workload libero-single-task`.
-- First full LIBERO manager evaluation.
+- First full LIBERO manager evaluation on top of the native eval loop.
 
 This phase is complete when `wam prepare fastwam-libero` can prepare or locate
 released assets, `wam run fastwam-libero --input obs.json` can emit actions

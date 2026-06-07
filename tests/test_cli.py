@@ -16,10 +16,6 @@ from wam_harness.core.types import (
 
 def write_fastwam_required_paths(repo) -> None:
     for relative in [
-        "src/fastwam/runtime.py",
-        "src/fastwam/utils/config_resolvers.py",
-        "src/fastwam/datasets/lerobot/robot_video_dataset.py",
-        "src/fastwam/datasets/lerobot/utils/normalizer.py",
         "configs/sim_libero.yaml",
         "configs/train.yaml",
         "configs/task/libero_uncond_2cam224_1e-4.yaml",
@@ -51,7 +47,7 @@ def test_cli_info_translates_model_entry(capsys) -> None:
     assert "Model: fastwam-libero" in captured.out
     assert "Inputs: images=primary,wrist; state=proprio; prompt=task_suite" in captured.out
     assert "Deployment: product=native_backend_migration" in captured.out
-    assert "native=fastwam (native_smoke_verified)" in captured.out
+    assert "native=fastwam (vendored_native_smoke_verified)" in captured.out
     assert "native_verified=true" in captured.out
     assert "Supported opts: action_chunk_scheduling" in captured.out
 
@@ -94,16 +90,23 @@ def test_cli_doctor_reports_backend_requirements(tmp_path, monkeypatch, capsys) 
     assert "Backend model adapter: fastwam_model" in captured.out
     assert "Backend readiness: blocked" in captured.out
     assert "Backend required assets: checkpoint,dataset_stats" in captured.out
+    assert "Backend runtime assets: checkpoint,dataset_stats,wan22_vae" in captured.out
+    assert "Backend missing required assets: checkpoint,dataset_stats" in captured.out
+    assert "Backend missing runtime assets: wan22_vae,wan22_t5_encoder" in captured.out
     assert (
-        "Backend runtime assets: checkpoint,dataset_stats,model_base,tokenizer_components"
+        str(
+            tmp_path
+            / "cache"
+            / "diffsynth-models"
+            / "Wan-AI"
+            / "Wan2.2-TI2V-5B"
+            / "Wan2.2_VAE.pth"
+        )
         in captured.out
     )
-    assert "Backend missing required assets: checkpoint,dataset_stats" in captured.out
-    assert "Backend missing runtime assets: model_base,tokenizer_components" in captured.out
-    assert str(tmp_path / "cache" / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B") in captured.out
     assert "Upstream repo: missing" in captured.out
     assert "Upstream env: WAM_FASTWAM_REPO" in captured.out
-    assert "src/fastwam/runtime.py" in captured.out
+    assert "src/fastwam/runtime.py" not in captured.out
     assert "Backend next steps:" in captured.out
     assert "Set WAM_FASTWAM_REPO=<repo> or pass --upstream-dir <repo>" in captured.out
     assert (
@@ -111,6 +114,33 @@ def test_cli_doctor_reports_backend_requirements(tmp_path, monkeypatch, capsys) 
         in captured.out
     )
     assert "Run inside the backend container or install backend dependencies" in captured.out
+    assert "Status: blocked" in captured.out
+
+
+def test_cli_doctor_uses_vendored_fastwam_runtime_by_default(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    monkeypatch.delenv("WAM_FASTWAM_REPO", raising=False)
+
+    exit_code = main(
+        [
+            "doctor",
+            "fastwam-libero",
+            "--cache-dir",
+            str(tmp_path / "cache"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "Backend target: fastwam (FastWAM)" in captured.out
+    assert "Upstream repo: present" in captured.out
+    assert "src/fastwam/configs" in captured.out
+    assert "Upstream selected commit: vendored:45d8e1458921d83f8ad6cf9ce993d371208dabd0" in captured.out
+    assert "Upstream commit status: vendored" in captured.out
+    assert "Set WAM_FASTWAM_REPO=<repo> or pass --upstream-dir <repo>" not in captured.out
+    assert "Backend missing required assets: checkpoint,dataset_stats" in captured.out
     assert "Status: blocked" in captured.out
 
 
@@ -148,8 +178,19 @@ def test_cli_doctor_json_reports_preflight_gate(tmp_path, monkeypatch, capsys) -
     assert "wam prepare fastwam-libero" in payload["backend"]["next_steps"][1]
     assert "Run inside the backend container" in payload["backend"]["next_steps"][2]
     assert payload["assets"][2]["expected_path"].endswith(
-        "diffsynth-models/Wan-AI/Wan2.2-TI2V-5B"
+        "diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth"
     )
+
+
+def test_cli_prepare_unknown_asset_prints_clean_error(capsys) -> None:
+    exit_code = main(["prepare", "fastwam-libero", "--asset", "typo"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert captured.err.startswith("error: unknown asset(s) or asset group(s)")
+    assert "Traceback" not in captured.err
 
 
 def test_cli_doctor_strict_returns_nonzero_for_warning(tmp_path, monkeypatch, capsys) -> None:
@@ -265,7 +306,7 @@ def test_cli_doctor_uses_cache_dir_for_backend_readiness(tmp_path, monkeypatch, 
     assert "Deployment: product=native_backend_migration" in captured.out
     assert "Backend readiness: blocked" in captured.out
     assert "Backend missing required assets" not in captured.out
-    assert "Backend missing runtime assets: model_base,tokenizer_components" in captured.out
+    assert "Backend missing runtime assets: wan22_vae,wan22_t5_encoder" in captured.out
     assert "Backend missing Python modules:" in captured.out
     assert "torch" in captured.out
     assert f"Upstream repo: present ({repo.resolve()})" in captured.out

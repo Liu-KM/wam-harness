@@ -80,7 +80,8 @@ stored as a YAML model spec; the code may still call it a manifest. A model
 entry binds:
 
 - model id and display name.
-- upstream source repository.
+- source/provenance information, such as a paper, upstream repository,
+  vendored runtime commit, or checkpoint host.
 - checkpoint, normalizer, dataset-stat, and other assets.
 - backend and processor registry keys.
 - default request shape and dtype/device preferences.

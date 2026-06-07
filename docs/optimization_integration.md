@@ -19,6 +19,11 @@ The integration target is a deployment-first platform:
 
 Do not merge upstream source trees into the harness core.
 
+If a model runtime must be vendored to make the product path independent of a
+manual upstream checkout, keep it isolated as a backend/runtime package with
+provenance and license metadata. The core runner should still depend only on
+the harness contract.
+
 Instead, each optimization enters through one of these boundaries:
 
 - `backend`: a local or remote implementation that can load, reset, warm up, and

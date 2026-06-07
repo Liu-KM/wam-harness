@@ -51,12 +51,36 @@ assets:
     uri: hf://yuanty/fastwam/libero_uncond_2cam224_dataset_stats.json
     local_path: checkpoints/fastwam_release/libero_uncond_2cam224_dataset_stats.json
     size_bytes: 40939
-  model_base:
-    uri: hf://Wan-AI/Wan2.2-TI2V-5B
-    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B
-  tokenizer_components:
-    uri: hf://Wan-AI/Wan2.1-T2V-1.3B
-    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B
+  wan22_vae:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+  wan22_t5_encoder:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth
+  wan21_tokenizer_spiece:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model
+  wan21_tokenizer_json:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json
+  wan21_tokenizer_config:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json
+  wan21_special_tokens_map:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json
+
+asset_groups:
+  eval:
+    assets:
+      - checkpoint
+      - dataset_stats
+      - wan22_vae
+      - wan22_t5_encoder
+      - wan21_tokenizer_spiece
+      - wan21_tokenizer_json
+      - wan21_tokenizer_config
+      - wan21_special_tokens_map
 
 backend:
   name: fastwam
@@ -235,10 +259,13 @@ contract observation. Adding a new model should not require a branch in the core
 runner or native smoke runner.
 
 The native backend implementation, not the core runner, declares the concrete
-runtime requirements for this migration path: upstream repo env var, required
-upstream files, and required asset names. `wam doctor <model-id>` reads those
-requirements through the backend registry and reports whether the current
-container or machine has the right mounts.
+runtime requirements for this migration path: required Python modules, required
+assets, runtime cache assets, and optional upstream files when a reference
+checkout override is supplied. `wam doctor <model-id>` reads those requirements
+through the backend registry and reports whether the current container or
+machine has the right runtime and mounts. For FastWAM, the product native path
+uses vendored runtime code; the `eval.upstream` section is only for official
+reference-eval parity.
 
 ## Asset URI Policy
 
@@ -252,7 +279,8 @@ Use source-of-truth asset hosts instead of vendoring large files:
 `wam prepare <model-id> --download` can materialize `hf://` assets into their
 declared `local_path`. A repeated `--asset <name>` filter lets maintainers fetch
 only the assets needed for native smoke bring-up without pulling every large
-model component in the entry.
+model component in the entry. `asset_groups` provide stable aliases such as
+`eval` for a verified minimal set of file assets.
 
 Relative `local_path` values are resolved under the command's cache directory.
 Use the same `--cache-dir` across `prepare`, `doctor`, `run`, `native-smoke`,

@@ -42,7 +42,6 @@ For FastWAM, prepare either the backend container from
 
 ```bash
 scripts/setup_fastwam_native_env.sh \
-  --upstream-dir /path/to/FastWAM \
   --venv /path/to/.venv-fastwam \
   --cache-dir /path/to/wam-cache \
   --clone
@@ -52,7 +51,7 @@ During that migration, use the maintainer smoke entrypoint to validate native
 backends without changing public defaults:
 
 ```bash
-wam native-smoke fastwam-libero --upstream-dir /path/to/FastWAM --require-ready
+wam native-smoke fastwam-libero --require-ready
 wam native-smoke cosmos-policy-libero --upstream-dir /path/to/cosmos-policy --require-ready
 wam native-smoke dreamzero-droid-sim --upstream-dir /path/to/dreamzero --require-ready
 ```
@@ -109,7 +108,10 @@ temporarily mapped to `mode: run` for an explicit one-shot observation or
 `mode: serve` for resident HTTP inference. Synthetic observations stay in
 `wam native-smoke` and `wam serve --smoke`. This keeps official eval scripts out
 of the product inference paths. Both paths accept the same backend-side
-overrides, such as `--upstream-dir` for mounted upstream source repositories.
+overrides. FastWAM uses vendored runtime code by default; `--upstream-dir` is
+only a reference/debug override for that backend. Other backends may still need
+mounted upstream source repositories until their runtime code is similarly
+packaged.
 
 Native backends resolve relative asset paths under their configured cache
 directory. The public commands pass this with `--cache-dir`; if omitted, the
@@ -136,10 +138,12 @@ wam run <model-id> --input obs.json
 `wam serve <model-id>` is the persistent policy endpoint for backends that can
 stay resident or that already expose a remote policy server.
 
-For FastWAM real simulator measurements, the current product entrypoint is:
+For FastWAM real simulator measurements, the current verified reference
+entrypoint is:
 
 ```bash
 wam eval fastwam-libero \
+  --reference \
   --workload libero-single-task \
   --task-id 0 \
   --num-trials 1 \

@@ -73,6 +73,7 @@ class Processor(Protocol):
 BackendFactory = Callable[[Manifest, list[OptimizationProfile]], Backend]
 ProcessorFactory = Callable[[Manifest], Processor]
 WorkloadFactory = Callable[[Manifest], object]
+EvalRunnerFactory = Callable[["Registry"], object]
 
 
 @dataclass
@@ -80,6 +81,7 @@ class Registry:
     backends: dict[str, BackendFactory] = field(default_factory=dict)
     processors: dict[str, ProcessorFactory] = field(default_factory=dict)
     workloads: dict[str, WorkloadFactory] = field(default_factory=dict)
+    eval_runners: dict[str, EvalRunnerFactory] = field(default_factory=dict)
     optimization_defaults: dict[str, dict[str, object]] = field(default_factory=dict)
     runtime_resolvers: list[RuntimeResolver] = field(default_factory=list)
     catalog: ManifestCatalog = field(default_factory=BuiltinManifestCatalog)
@@ -92,6 +94,9 @@ class Registry:
 
     def register_workload(self, name: str, factory: WorkloadFactory) -> None:
         self.workloads[name] = factory
+
+    def register_eval_runner(self, name: str, factory: EvalRunnerFactory) -> None:
+        self.eval_runners[name] = factory
 
     def register_optimization(self, name: str, defaults: dict[str, object] | None = None) -> None:
         self.optimization_defaults[name] = defaults or {}
@@ -172,6 +177,13 @@ class Registry:
         except KeyError as exc:
             raise RegistryError(f"unknown workload: {manifest.workload_name}") from exc
         return factory(manifest)
+
+    def create_eval_runner(self, name: str) -> object:
+        try:
+            factory = self.eval_runners[name]
+        except KeyError as exc:
+            raise RegistryError(f"unknown eval runner: {name}") from exc
+        return factory(self)
 
 
 def default_registry() -> Registry:

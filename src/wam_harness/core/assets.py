@@ -27,7 +27,8 @@ class HuggingFaceAssetDownloader:
             _snapshot_download(ref.repo_id, expected_path)
             return
 
-        downloaded_path = _hf_hub_download(ref.repo_id, ref.filename, expected_path.parent)
+        local_dir = _hf_local_dir(ref.filename, expected_path)
+        downloaded_path = _hf_hub_download(ref.repo_id, ref.filename, local_dir)
         if downloaded_path != expected_path:
             expected_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(downloaded_path, expected_path)
@@ -63,6 +64,13 @@ def _hf_hub_download(repo_id: str, filename: str, local_dir: Path) -> Path:
             local_dir=str(local_dir),
         )
     )
+
+
+def _hf_local_dir(filename: str, expected_path: Path) -> Path:
+    local_dir = expected_path
+    for _ in Path(filename).parts:
+        local_dir = local_dir.parent
+    return local_dir
 
 
 def _snapshot_download(repo_id: str, local_dir: Path) -> None:

@@ -60,7 +60,7 @@ def test_fastwam_processor_summarizes_future_frames_without_embedding_video() ->
     }
 
 
-def test_fastwam_native_backend_fails_clearly_without_upstream_repo(tmp_path) -> None:
+def test_fastwam_native_backend_fails_clearly_for_bad_explicit_upstream_dir(tmp_path) -> None:
     registry = default_registry()
     data = load_builtin_manifest("fastwam-libero").to_dict()
     data["backend"] = {
@@ -71,11 +71,11 @@ def test_fastwam_native_backend_fails_clearly_without_upstream_repo(tmp_path) ->
     manifest = manifest_from_dict(data)
     backend = registry.create_backend(manifest, [])
 
-    with pytest.raises(FastWAMNativeBackendError, match="FastWAM upstream repo not found"):
+    with pytest.raises(FastWAMNativeBackendError, match="FastWAM config directory not found"):
         backend.load()
 
 
-def test_fastwam_native_required_paths_do_not_use_official_eval_entrypoints() -> None:
+def test_fastwam_native_required_paths_are_empty_for_vendored_runtime() -> None:
     registry = default_registry()
     data = load_builtin_manifest("fastwam-libero").to_dict()
     data["backend"] = {"name": "fastwam", "mode": "native", "config": {}}
@@ -84,10 +84,31 @@ def test_fastwam_native_required_paths_do_not_use_official_eval_entrypoints() ->
 
     required_paths = backend.native_required_upstream_paths()
 
+    assert required_paths == ()
+
+
+def test_fastwam_native_required_paths_for_explicit_upstream_are_config_only(tmp_path) -> None:
+    registry = default_registry()
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["backend"] = {
+        "name": "fastwam",
+        "mode": "native",
+        "config": {"upstream_dir": str(tmp_path / "FastWAM")},
+    }
+    manifest = manifest_from_dict(data)
+    backend = registry.create_backend(manifest, [])
+
+    required_paths = backend.native_required_upstream_paths()
+
     assert "experiments/libero/eval_libero_single.py" not in required_paths
     assert "experiments/libero/run_libero_manager.py" not in required_paths
-    assert "src/fastwam/runtime.py" in required_paths
-    assert "configs/sim_libero.yaml" in required_paths
+    assert "src/fastwam/runtime.py" not in required_paths
+    assert set(required_paths) >= {
+        "configs/train.yaml",
+        "configs/task/libero_uncond_2cam224_1e-4.yaml",
+        "configs/data/libero_2cam.yaml",
+        "configs/model/fastwam.yaml",
+    }
 
 
 def test_fastwam_native_backend_load_binds_runtime_loader_bundle(tmp_path) -> None:
@@ -122,11 +143,11 @@ def test_fastwam_native_backend_load_binds_runtime_loader_bundle(tmp_path) -> No
 
     backend.load()
 
-    assert runtime_loader.repo == repo.resolve()
+    assert runtime_loader.config_dir == (repo / "configs").resolve()
     assert runtime_loader.checkpoint_path == checkpoint.resolve()
     assert runtime_loader.dataset_stats_path == dataset_stats.resolve()
     assert backend.loaded is True
-    assert backend.upstream_repo == repo.resolve()
+    assert backend.upstream_repo == (repo / "configs")
     assert backend.model is runtime_loader.bundle.model
     assert backend.cfg is runtime_loader.bundle.cfg
     assert backend.device == "cpu"
@@ -135,12 +156,19 @@ def test_fastwam_native_backend_load_binds_runtime_loader_bundle(tmp_path) -> No
     assert backend.processor.prompt_template == "template: {task}"
 
 
-def test_fastwam_native_backend_derives_diffsynth_root_from_model_base_asset(tmp_path) -> None:
+def test_fastwam_native_backend_derives_diffsynth_root_from_wan_file_asset(tmp_path) -> None:
     registry = default_registry()
     data = load_builtin_manifest("fastwam-libero").to_dict()
-    model_base = tmp_path / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B"
-    model_base.mkdir(parents=True)
-    data["assets"]["model_base"]["local_path"] = str(model_base)
+    wan22_vae = (
+        tmp_path
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.2-TI2V-5B"
+        / "Wan2.2_VAE.pth"
+    )
+    wan22_vae.parent.mkdir(parents=True)
+    wan22_vae.write_text("asset\n", encoding="utf-8")
+    data["assets"]["wan22_vae"]["local_path"] = str(wan22_vae)
     data["backend"] = {"name": "fastwam", "mode": "native", "config": {}}
     manifest = manifest_from_dict(data)
 
@@ -149,7 +177,21 @@ def test_fastwam_native_backend_derives_diffsynth_root_from_model_base_asset(tmp
     assert backend._diffsynth_model_base_path() == tmp_path / "diffsynth-models"
 
 
-def test_fastwam_native_backend_prefers_configured_cache_for_missing_model_base(
+def test_fastwam_native_backend_derives_diffsynth_root_from_custom_wan_asset_path() -> None:
+    registry = default_registry()
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["assets"]["wan22_vae"]["local_path"] = (
+        "/models/Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth"
+    )
+    data["backend"] = {"name": "fastwam", "mode": "native", "config": {}}
+    manifest = manifest_from_dict(data)
+
+    backend = registry.create_backend(manifest, [])
+
+    assert backend._diffsynth_model_base_path() == Path("/models")
+
+
+def test_fastwam_native_backend_prefers_configured_cache_for_missing_wan_file(
     tmp_path,
 ) -> None:
     registry = default_registry()
@@ -357,7 +399,7 @@ class _AttrDict(dict):
 
 class _FakeFastWAMRuntimeLoader:
     def __init__(self) -> None:
-        self.repo = None
+        self.config_dir = None
         self.checkpoint_path = None
         self.dataset_stats_path = None
         self.bundle = FastWAMRuntimeBundle(
@@ -371,8 +413,8 @@ class _FakeFastWAMRuntimeLoader:
             dataset_stats_path=Path("dataset_stats"),
         )
 
-    def load(self, *, repo, checkpoint_path, dataset_stats_path):
-        self.repo = repo
+    def load(self, *, config_dir, checkpoint_path, dataset_stats_path):
+        self.config_dir = config_dir.resolve()
         self.checkpoint_path = checkpoint_path
         self.dataset_stats_path = dataset_stats_path
         self.bundle = FastWAMRuntimeBundle(

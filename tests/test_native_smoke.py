@@ -30,10 +30,6 @@ def read_events(path):
 
 def write_fastwam_required_paths(repo) -> None:
     for relative in [
-        "src/fastwam/runtime.py",
-        "src/fastwam/utils/config_resolvers.py",
-        "src/fastwam/datasets/lerobot/robot_video_dataset.py",
-        "src/fastwam/datasets/lerobot/utils/normalizer.py",
         "configs/sim_libero.yaml",
         "configs/train.yaml",
         "configs/task/libero_uncond_2cam224_1e-4.yaml",
@@ -192,7 +188,14 @@ def test_native_smoke_require_ready_rejects_runtime_asset_warning(tmp_path) -> N
     assert readiness["runtime_mode"] == "in_process"
     assert readiness["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness["missing_required_assets"] == []
-    assert readiness["missing_runtime_assets"] == ["model_base", "tokenizer_components"]
+    assert readiness["missing_runtime_assets"] == [
+        "wan22_vae",
+        "wan22_t5_encoder",
+        "wan21_tokenizer_spiece",
+        "wan21_tokenizer_json",
+        "wan21_tokenizer_config",
+        "wan21_special_tokens_map",
+    ]
     assert events[3]["stage"] == "preflight"
 
 

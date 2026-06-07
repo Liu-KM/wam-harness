@@ -5,7 +5,9 @@ display_name: FastWAM LIBERO
 source:
   repo: yuantianyuan01/FastWAM
   reference: "Fast-WAM: Do World Action Models Need Test-time Future Imagination?"
-  license: unknown
+  license: MIT
+  runtime_source: vendored
+  vendored_commit: 45d8e1458921d83f8ad6cf9ce993d371208dabd0
 
 assets:
   checkpoint:
@@ -16,12 +18,55 @@ assets:
     uri: hf://yuanty/fastwam/libero_uncond_2cam224_dataset_stats.json
     local_path: checkpoints/fastwam_release/libero_uncond_2cam224_dataset_stats.json
     size_bytes: 40939
+  wan22_vae:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    size_bytes: 2818839170
+  wan22_t5_encoder:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth
+    size_bytes: 11361920418
+  wan21_tokenizer_spiece:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model
+    size_bytes: 4548313
+  wan21_tokenizer_json:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json
+    size_bytes: 16837417
+  wan21_tokenizer_config:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json
+    size_bytes: 61728
+  wan21_special_tokens_map:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json
+    size_bytes: 6623
+
+asset_groups:
+  eval:
+    description: Minimal asset set verified for official FastWAM LIBERO eval.
+    assets:
+      - checkpoint
+      - dataset_stats
+      - wan22_vae
+      - wan22_t5_encoder
+      - wan21_tokenizer_spiece
+      - wan21_tokenizer_json
+      - wan21_tokenizer_config
+      - wan21_special_tokens_map
   model_base:
-    uri: hf://Wan-AI/Wan2.2-TI2V-5B
-    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B
+    description: Backward-compatible alias for the Wan2.2 files used by official eval.
+    assets:
+      - wan22_vae
+      - wan22_t5_encoder
   tokenizer_components:
-    uri: hf://Wan-AI/Wan2.1-T2V-1.3B
-    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B
+    description: Backward-compatible alias for the Wan2.1 tokenizer files used by official eval.
+    assets:
+      - wan21_tokenizer_spiece
+      - wan21_tokenizer_json
+      - wan21_tokenizer_config
+      - wan21_special_tokens_map
 
 backend:
   name: external_eval
@@ -47,7 +92,7 @@ workload:
   config:
     simulator: LIBERO
     suite: libero_10
-    default_eval_workload: libero-manager
+    default_eval_workload: libero-single-task
     eval_workloads:
       - libero-manager
       - libero-single-task
@@ -77,12 +122,13 @@ deployment:
   reference_path: official_script
   product_path: native_backend_migration
   native_backend: fastwam
-  native_stage: native_smoke_verified
+  native_stage: vendored_native_smoke_verified
   native_verified: true
   simulator_eval: single_task_verified
   parity_verified: false
   next_gate: full_libero_eval
   notes:
+    - Native backend uses the FastWAM runtime vendored in WAM Harness; a FastWAM upstream checkout is not required for run, serve, doctor, or native-smoke.
     - Native backend loads the released checkpoint and passes synthetic-observation smoke.
     - LIBERO single-task simulator eval passes through wam eval.
     - Full LIBERO manager eval and native-vs-reference parity have not passed yet.
@@ -90,7 +136,7 @@ deployment:
 eval:
   simulator: LIBERO
   suite: libero_10
-  default_workload: libero-manager
+  default_workload: libero-single-task
   upstream:
     repo: yuantianyuan01/FastWAM
     commit: 45d8e14
@@ -150,11 +196,14 @@ eval:
           - model.redirect_common_files={redirect_common_files}
     libero-single-task:
       description: One official LIBERO task evaluator used as a fast smoke path.
+      native:
+        runner: libero_single_task
       defaults:
         task_suite_name: libero_10
         task_id: "0"
         gpu_id: "0"
         num_inference_steps: "10"
+        num_steps_wait: "5"
         visualize_future_video: "False"
       command:
         workdir: "{upstream_dir}"
@@ -188,5 +237,5 @@ eval:
 known_gaps:
   - Requires the official LIBERO environment and MuJoCo inside the FastWAM container.
   - The verified reference deployment uses OSMesa software rendering because NVIDIA EGL may fail to create a robosuite display on some managed GPU nodes.
-  - Released FastWAM setup expects the Wan/ActionDiT model base outside this repo.
+  - Released FastWAM eval expects the Wan VAE, T5 encoder, and tokenizer files in a DiffSynth-style cache outside this repo.
   - This manifest exposes official manager and single-task eval workloads before simulator parity is complete.

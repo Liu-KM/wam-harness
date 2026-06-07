@@ -31,6 +31,7 @@ class Manifest:
     display_name: str
     source: JsonDict
     assets: JsonDict
+    asset_groups: JsonDict
     backend: JsonDict
     processor: JsonDict
     workload: JsonDict
@@ -69,6 +70,7 @@ class Manifest:
             "display_name": self.display_name,
             "source": self.source,
             "assets": self.assets,
+            "asset_groups": self.asset_groups,
             "backend": self.backend,
             "processor": self.processor,
             "workload": self.workload,

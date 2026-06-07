@@ -4,9 +4,21 @@ from pathlib import Path
 
 import pytest
 
-from wam_harness.core.assets import parse_hf_uri
+from wam_harness.core.assets import _hf_local_dir, parse_hf_uri
 from wam_harness.cli_render import render_prepare
 from wam_harness.core.model_entry import prepare_model_entry
+
+
+FASTWAM_EVAL_ASSETS = [
+    "checkpoint",
+    "dataset_stats",
+    "wan22_vae",
+    "wan22_t5_encoder",
+    "wan21_tokenizer_spiece",
+    "wan21_tokenizer_json",
+    "wan21_tokenizer_config",
+    "wan21_special_tokens_map",
+]
 
 
 class RecordingDownloader:
@@ -31,6 +43,29 @@ def test_parse_hf_uri_for_snapshot_asset() -> None:
 
     assert ref.repo_id == "Wan-AI/Wan2.2-TI2V-5B"
     assert ref.filename is None
+
+
+def test_parse_hf_uri_for_nested_file_asset() -> None:
+    ref = parse_hf_uri("hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json")
+
+    assert ref.repo_id == "Wan-AI/Wan2.1-T2V-1.3B"
+    assert ref.filename == "google/umt5-xxl/tokenizer.json"
+
+
+def test_hf_local_dir_uses_repo_root_for_nested_file_asset() -> None:
+    expected_path = (
+        Path("/cache")
+        / "diffsynth-models"
+        / "Wan-AI"
+        / "Wan2.1-T2V-1.3B"
+        / "google"
+        / "umt5-xxl"
+        / "tokenizer.json"
+    )
+
+    assert _hf_local_dir("google/umt5-xxl/tokenizer.json", expected_path) == (
+        Path("/cache") / "diffsynth-models" / "Wan-AI" / "Wan2.1-T2V-1.3B"
+    )
 
 
 def test_prepare_downloads_selected_assets_only(tmp_path) -> None:
@@ -74,7 +109,7 @@ def test_prepare_downloads_selected_assets_only(tmp_path) -> None:
     assert "[downloaded]" in output
 
 
-def test_prepare_resolves_fastwam_runtime_assets_under_cache_dir(tmp_path) -> None:
+def test_prepare_resolves_fastwam_eval_asset_group_under_cache_dir(tmp_path) -> None:
     downloader = RecordingDownloader()
     cache_dir = tmp_path / "cache"
 
@@ -82,18 +117,105 @@ def test_prepare_resolves_fastwam_runtime_assets_under_cache_dir(tmp_path) -> No
         "fastwam-libero",
         cache_dir=cache_dir,
         download=True,
-        selected_assets=["model_base"],
+        selected_assets=["eval"],
         downloader=downloader,
     )
 
-    expected_path = cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B"
     assert summary.status == "ok"
-    assert downloader.calls == [("hf://Wan-AI/Wan2.2-TI2V-5B", expected_path)]
-    model_base = next(asset for asset in summary.assets if asset.name == "model_base")
-    assert model_base.expected_path == expected_path
-    assert model_base.downloaded is True
-    assert model_base.required is False
-    assert model_base.runtime is True
+    assert summary.selected_assets == FASTWAM_EVAL_ASSETS
+    assert downloader.calls == [
+        (
+            "hf://yuanty/fastwam/libero_uncond_2cam224.pt",
+            cache_dir / "checkpoints" / "fastwam_release" / "libero_uncond_2cam224.pt",
+        ),
+        (
+            "hf://yuanty/fastwam/libero_uncond_2cam224_dataset_stats.json",
+            cache_dir
+            / "checkpoints"
+            / "fastwam_release"
+            / "libero_uncond_2cam224_dataset_stats.json",
+        ),
+        (
+            "hf://Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth",
+            cache_dir / "diffsynth-models" / "Wan-AI" / "Wan2.2-TI2V-5B" / "Wan2.2_VAE.pth",
+        ),
+        (
+            "hf://Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth",
+            cache_dir
+            / "diffsynth-models"
+            / "Wan-AI"
+            / "Wan2.2-TI2V-5B"
+            / "models_t5_umt5-xxl-enc-bf16.pth",
+        ),
+        (
+            "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model",
+            cache_dir
+            / "diffsynth-models"
+            / "Wan-AI"
+            / "Wan2.1-T2V-1.3B"
+            / "google"
+            / "umt5-xxl"
+            / "spiece.model",
+        ),
+        (
+            "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json",
+            cache_dir
+            / "diffsynth-models"
+            / "Wan-AI"
+            / "Wan2.1-T2V-1.3B"
+            / "google"
+            / "umt5-xxl"
+            / "tokenizer.json",
+        ),
+        (
+            "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json",
+            cache_dir
+            / "diffsynth-models"
+            / "Wan-AI"
+            / "Wan2.1-T2V-1.3B"
+            / "google"
+            / "umt5-xxl"
+            / "tokenizer_config.json",
+        ),
+        (
+            "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json",
+            cache_dir
+            / "diffsynth-models"
+            / "Wan-AI"
+            / "Wan2.1-T2V-1.3B"
+            / "google"
+            / "umt5-xxl"
+            / "special_tokens_map.json",
+        ),
+    ]
+    wan22_vae = next(asset for asset in summary.assets if asset.name == "wan22_vae")
+    assert wan22_vae.downloaded is True
+    assert wan22_vae.required is False
+    assert wan22_vae.runtime is True
+
+
+def test_prepare_keeps_fastwam_legacy_runtime_asset_aliases(tmp_path) -> None:
+    downloader = RecordingDownloader()
+    cache_dir = tmp_path / "cache"
+
+    summary = prepare_model_entry(
+        "fastwam-libero",
+        cache_dir=cache_dir,
+        download=True,
+        selected_assets=["model_base", "tokenizer_components"],
+        downloader=downloader,
+    )
+
+    assert summary.status == "ok"
+    assert summary.selected_assets == FASTWAM_EVAL_ASSETS[2:]
+    assert {call[0] for call in downloader.calls} == {
+        "hf://Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth",
+        "hf://Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth",
+        "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model",
+        "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json",
+        "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json",
+        "hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json",
+    }
 
 
 def test_prepare_marks_fastwam_native_asset_roles(tmp_path) -> None:
@@ -107,8 +229,12 @@ def test_prepare_marks_fastwam_native_asset_roles(tmp_path) -> None:
     assert roles == {
         "checkpoint": (True, True),
         "dataset_stats": (True, True),
-        "model_base": (False, True),
-        "tokenizer_components": (False, True),
+        "wan22_vae": (False, True),
+        "wan22_t5_encoder": (False, True),
+        "wan21_tokenizer_spiece": (False, True),
+        "wan21_tokenizer_json": (False, True),
+        "wan21_tokenizer_config": (False, True),
+        "wan21_special_tokens_map": (False, True),
     }
 
 

@@ -43,7 +43,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/wam_harness"]
+packages = ["src/wam_harness", "src/fastwam"]
 
 [tool.uv]
 package = true
@@ -55,3 +55,14 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = [
+  ".git",
+  ".local",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv",
+  "dist",
+  "logs",
+  "runs",
+  "src/fastwam"
+]

@@ -72,6 +72,8 @@ Official simulator scripts are reference evaluators, not the default product
 path. For maintainer parity checks, call them explicitly:
 
 ```bash
+wam eval fastwam-libero --workload libero-single-task --task-id 0 --num-trials 1
+
 wam eval fastwam-libero --reference --upstream-dir /path/to/FastWAM
 wam eval fastwam-libero \
   --reference \
@@ -82,8 +84,9 @@ wam eval fastwam-libero \
 ```
 
 `fastwam-libero` is the model id. `libero-single-task` is an eval workload: it
-switches the official evaluator entrypoint without changing the checkpoint or
-action contract.
+selects the curated LIBERO single-task simulator loop without changing the
+checkpoint or action contract. `--reference` switches the same workload to the
+official upstream script for parity/debugging.
 
 For real WAMs, `wam run` requires an explicit observation input. WAM inference
 needs images, robot state, prompt, and optional session/history; the CLI does
@@ -97,15 +100,18 @@ FastWAM's first product-path input example lives at
 wam run fastwam-libero \
   --input examples/fastwam_libero/obs.json \
   --output /tmp/fastwam-action.json \
-  --upstream-dir /path/to/FastWAM \
   --cache-dir /path/to/wam-cache
 
 wam serve fastwam-libero \
   --smoke \
   --smoke-input examples/fastwam_libero/obs.json \
-  --upstream-dir /path/to/FastWAM \
   --cache-dir /path/to/wam-cache
 ```
+
+FastWAM product-path `doctor`, `run`, `native-smoke`, and `serve` use the
+FastWAM runtime vendored in this package. `--upstream-dir` is only needed when
+you intentionally run the official reference evaluator or debug against a
+separate FastWAM checkout.
 
 ## Optimization Profiles
 
@@ -233,7 +239,6 @@ Install the FastWAM runtime directly when containers are not available:
 
 ```bash
 scripts/setup_fastwam_native_env.sh \
-  --upstream-dir /path/to/FastWAM \
   --venv /path/to/.venv-fastwam \
   --cache-dir /path/to/wam-cache \
   --clone
@@ -243,8 +248,8 @@ Then activate the environment and use the normal `wam` commands:
 
 ```bash
 source /path/to/.venv-fastwam/bin/activate
-wam doctor fastwam-libero --cache-dir /path/to/wam-cache --upstream-dir /path/to/FastWAM
-wam prepare fastwam-libero --cache-dir /path/to/wam-cache
+wam doctor fastwam-libero --cache-dir /path/to/wam-cache
+wam prepare fastwam-libero --cache-dir /path/to/wam-cache --download --asset eval
 ```
 
 Cluster users should launch prepared images or activated self-managed

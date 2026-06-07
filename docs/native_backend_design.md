@@ -634,7 +634,7 @@ Before the public model entry is switched, use the migration-only smoke command
 to validate the native backend against the same model entry:
 
 ```bash
-wam native-smoke fastwam-libero --upstream-dir /path/to/FastWAM --require-ready
+wam native-smoke fastwam-libero --require-ready
 wam native-smoke cosmos-policy-libero --upstream-dir /path/to/cosmos-policy --require-ready
 wam native-smoke dreamzero-droid-sim --upstream-dir /path/to/dreamzero --require-ready
 ```
