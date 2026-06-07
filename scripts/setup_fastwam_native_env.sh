@@ -4,25 +4,25 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/setup_fastwam_native_env.sh --upstream-dir PATH [options]
+  scripts/setup_fastwam_native_env.sh [options]
 
 Purpose:
   Build a self-managed FastWAM native runtime environment without Docker,
-  Apptainer, Slurm, or site-specific launchers. The same script is also used by
-  the FastWAM container recipe so container and non-container installs stay in
-  sync.
+  Apptainer, Slurm, or site-specific launchers. FastWAM runtime code is
+  provided by WAM Harness; an upstream FastWAM checkout is only needed for
+  explicit reference-eval parity checks.
 
 Options:
-  --upstream-dir PATH       FastWAM checkout path. Required unless WAM_FASTWAM_REPO is set.
+  --upstream-dir PATH       Optional FastWAM checkout path for reference eval/debug.
   --venv PATH               Python venv path. Default: .venv-fastwam
   --harness-dir PATH        WAM Harness source path. Default: current directory.
   --cache-dir PATH          WAM cache path. Default: ${WAM_CACHE_DIR:-~/.cache/wam}
   --libero-dir PATH         LIBERO checkout path. Default: <cache-dir>/upstreams/LIBERO
   --python VERSION          Python version for uv venv. Default: 3.10
   --torch-backend BACKEND   uv PyTorch backend. Default: cu128
-  --fastwam-ref REF         FastWAM git ref used with --clone. Default: 45d8e14
+  --fastwam-ref REF         Optional FastWAM ref used with --clone and --upstream-dir. Default: 45d8e14
   --libero-ref REF          LIBERO git ref used with --clone. Default: master
-  --clone                   Clone missing FastWAM/LIBERO repos and checkout refs.
+  --clone                   Clone missing optional FastWAM reference repo and/or LIBERO.
   --no-harness              Do not install WAM Harness into the venv.
   --no-libero               Do not install LIBERO/simulator runtime packages.
   --no-configure-libero     Do not write LIBERO_CONFIG_PATH/config.yaml.
@@ -30,9 +30,8 @@ Options:
 
 After install:
   source <venv>/bin/activate
-  export WAM_FASTWAM_REPO=<upstream-dir>
   export LIBERO_CONFIG_PATH=<cache-dir>/libero/config
-  wam doctor fastwam-libero --cache-dir <cache-dir> --upstream-dir <upstream-dir>
+  wam doctor fastwam-libero --cache-dir <cache-dir>
 EOF
 }
 
@@ -123,7 +122,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -n "$upstream_dir" ]] || die "--upstream-dir is required unless WAM_FASTWAM_REPO is set"
 [[ -n "$venv_dir" ]] || die "--venv must not be empty"
 [[ -n "$harness_dir" ]] || die "--harness-dir must not be empty"
 [[ -n "$cache_dir" ]] || die "--cache-dir must not be empty"
@@ -140,21 +138,23 @@ command -v uv >/dev/null 2>&1 || die "uv is required. Install uv first: https://
 command -v git >/dev/null 2>&1 || die "git is required"
 
 mkdir -p "$cache_dir"
-upstream_dir="$("$python_cmd" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$upstream_dir")"
 venv_dir="$("$python_cmd" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$venv_dir")"
 harness_dir="$("$python_cmd" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$harness_dir")"
 cache_dir="$("$python_cmd" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$cache_dir")"
 libero_dir="$("$python_cmd" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$libero_dir")"
 
-if [[ ! -d "$upstream_dir/.git" ]]; then
-  if [[ "$clone_repos" != "1" ]]; then
-    die "FastWAM repo not found at $upstream_dir. Clone it first or pass --clone."
+if [[ -n "$upstream_dir" ]]; then
+  upstream_dir="$("$python_cmd" -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$upstream_dir")"
+  if [[ ! -d "$upstream_dir/.git" ]]; then
+    if [[ "$clone_repos" != "1" ]]; then
+      die "FastWAM reference repo not found at $upstream_dir. Omit --upstream-dir for the vendored native runtime, or pass --clone for reference eval."
+    fi
+    mkdir -p "$(dirname "$upstream_dir")"
+    git clone "$fastwam_repo" "$upstream_dir"
   fi
-  mkdir -p "$(dirname "$upstream_dir")"
-  git clone "$fastwam_repo" "$upstream_dir"
+  git -C "$upstream_dir" fetch --all --tags
+  git -C "$upstream_dir" checkout "$fastwam_ref"
 fi
-git -C "$upstream_dir" fetch --all --tags
-git -C "$upstream_dir" checkout "$fastwam_ref"
 
 if [[ "$install_libero" == "1" ]]; then
   if [[ ! -d "$libero_dir/.git" ]]; then
@@ -187,13 +187,38 @@ PY
 ln -sf "$cmake_real_bin" "$cache_dir/bin/cmake"
 export PATH="$cache_dir/bin:$PATH"
 
+uv pip install --python "$python_bin" \
+  --torch-backend "$torch_backend" \
+  accelerate==1.12.0 \
+  av==16.0.1 \
+  boto3==1.35.99 \
+  datasets==3.6.0 \
+  einops==0.8.1 \
+  gitpython==3.1.45 \
+  huggingface-hub==0.29.2 \
+  hydra-core==1.3.2 \
+  imageio==2.37.0 \
+  imageio-ffmpeg==0.6.0 \
+  jsonlines==4.0.0 \
+  numpy==1.26.4 \
+  omegaconf==2.3.0 \
+  packaging==25.0 \
+  pandas==2.2.3 \
+  pillow==12.0.0 \
+  pyarrow==23.0.0 \
+  regex==2025.11.3 \
+  rich==14.2.0 \
+  safetensors==0.5.3 \
+  termcolor==2.5.0 \
+  torch==2.7.1 \
+  torchvision==0.22.1 \
+  tqdm==4.66.5 \
+  transformers==4.49.0 \
+  typing-extensions==4.15.0
+
 if [[ "$install_harness" == "1" ]]; then
   uv pip install --python "$python_bin" "$harness_dir"
 fi
-
-uv pip install --python "$python_bin" \
-  --torch-backend "$torch_backend" \
-  -e "$upstream_dir"
 
 if [[ "$install_libero" == "1" ]]; then
   libero_config_path="${LIBERO_CONFIG_PATH:-$cache_dir/libero/config}"
@@ -229,32 +254,18 @@ if spec is not None and spec.submodule_search_locations:
 PY
   uv pip install --python "$python_bin" -e "$libero_dir"
 
-  libero_package_root="$libero_dir/libero"
-  [[ -d "$libero_package_root/libero" ]] || die "LIBERO package root not found at $libero_package_root"
-  "$python_bin" - "$libero_package_root" <<'PY'
+  [[ -d "$libero_dir/libero/libero" ]] || die "LIBERO package root not found at $libero_dir/libero/libero"
+  "$python_bin" - "$libero_dir" <<'PY'
 from pathlib import Path
 import site
 import sys
 
-package_root = Path(sys.argv[1]).resolve()
+repo_root = Path(sys.argv[1]).resolve()
 site_packages = site.getsitepackages()
 if not site_packages:
     raise SystemExit("could not locate site-packages for LIBERO .pth install")
 pth_path = Path(site_packages[0]) / "wam_fastwam_libero.pth"
-pth_path.write_text(f"{package_root}\n", encoding="utf-8")
-
-libero_package = package_root / "libero"
-compat_module = libero_package / "libero.py"
-if compat_module.exists():
-    compat_module.unlink()
-compat_package = libero_package / "libero"
-compat_package.mkdir(exist_ok=True)
-(compat_package / "__init__.py").write_text(
-    "from pathlib import Path\n"
-    "from .. import *\n"
-    "__path__ = [str(Path(__file__).resolve().parents[1])]\n",
-    encoding="utf-8",
-)
+pth_path.write_text(f"{repo_root}\n", encoding="utf-8")
 PY
 
   if [[ "$configure_libero" == "1" ]]; then
@@ -309,13 +320,24 @@ Activate it:
   source "$venv_dir/bin/activate"
 
 Use it:
-  export WAM_FASTWAM_REPO="$upstream_dir"
   export WAM_CACHE_DIR="$cache_dir"
+  export WAM_LIBERO_DIR="$libero_dir"
   export LIBERO_CONFIG_PATH="${LIBERO_CONFIG_PATH:-$cache_dir/libero/config}"
-  wam doctor fastwam-libero --cache-dir "$cache_dir" --upstream-dir "$upstream_dir"
+  wam doctor fastwam-libero --cache-dir "$cache_dir"
 
 Prepare model assets separately:
-  wam prepare fastwam-libero --cache-dir "$cache_dir" --download --asset checkpoint --asset dataset_stats
-  wam prepare fastwam-libero --cache-dir "$cache_dir" --download --asset model_base --asset tokenizer_components
+  wam prepare fastwam-libero --cache-dir "$cache_dir" --download --asset eval
+
+Run the end-to-end acceptance path:
+  "$harness_dir/scripts/fastwam-libero-eval.sh" --cache-dir "$cache_dir" --trace-dir <runs-dir>
 
 EOF
+
+if [[ -n "$upstream_dir" ]]; then
+  cat <<EOF
+Optional reference eval checkout:
+  export WAM_FASTWAM_REPO="$upstream_dir"
+  wam eval fastwam-libero --reference --upstream-dir "$upstream_dir"
+
+EOF
+fi

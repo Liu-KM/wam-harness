@@ -22,7 +22,7 @@ Build locally:
 
 ```bash
 docker build -f containers/core/Dockerfile -t wam-harness-core:latest .
-docker build -f containers/fastwam/Dockerfile -t wam-harness-fastwam:latest .
+docker build -f containers/fastwam/Dockerfile -t wam-harness-fastwam:cu128 .
 docker build -f containers/cosmos-policy/Dockerfile -t wam-harness-cosmos-policy:latest .
 docker build -f containers/dreamzero/Dockerfile -t wam-harness-dreamzero:latest .
 ```
@@ -32,29 +32,32 @@ The harness does not prescribe scheduler commands or site-specific launch
 mechanics.
 
 Real backend simulator evaluations use the same harness entrypoint but require
-a backend-specific image and upstream repo checkout mounted into the container:
+a backend-specific image and model/cache storage mounted into the container:
 
 ```bash
 wam doctor fastwam-libero \
   --cache-dir /mnt/wam-cache \
-  --upstream-dir /mnt/upstream \
   --json \
   --strict
 
 wam native-smoke fastwam-libero \
   --cache-dir /mnt/wam-cache \
-  --upstream-dir /mnt/upstream \
   --trace-dir /mnt/runs \
   --require-ready
 
-wam eval fastwam-libero --reference --trace-dir /mnt/runs --upstream-dir /mnt/upstream
+wam eval fastwam-libero \
+  --cache-dir /mnt/wam-cache \
+  --trace-dir /mnt/runs \
+  --workload libero-single-task \
+  --task-id 0 \
+  --num-trials 1
 ```
 
 Backend images install the `wam` CLI as part of the image. This is required for
 the native migration path: the heavy dependency environment and the harness
 entrypoint must be in the same container so `wam doctor`, `wam native-smoke`,
-`wam run`, and `wam serve` see the same Python modules, upstream source, and
-mounted assets.
+`wam run`, and `wam serve` see the same Python modules and mounted assets.
+Reference eval may still mount upstream source explicitly with `--upstream-dir`.
 
 For FastWAM, the image calls `scripts/setup_fastwam_native_env.sh` during build.
 That script is also the public self-managed install path, so the container and
@@ -64,24 +67,47 @@ For FastWAM, the expected container-internal shape is:
 
 ```text
 /workspace/wam-harness  installed harness package and working directory
-/opt/FastWAM            upstream FastWAM checkout
 /opt/LIBERO             upstream LIBERO checkout
 /mnt/wam-cache          mounted model/cache directory
 /mnt/runs               mounted trace/output directory
 ```
 
-Then run:
+The FastWAM image sets these defaults:
+
+```text
+WAM_CACHE_DIR=/mnt/wam-cache
+WAM_TRACE_DIR=/mnt/runs
+WAM_LIBERO_DIR=/opt/LIBERO
+LIBERO_CONFIG_PATH=/mnt/wam-cache/libero/config
+MUJOCO_GL=egl
+PYOPENGL_PLATFORM=egl
+```
+
+Then run the full acceptance path:
+
+```bash
+mkdir -p /path/to/wam-cache /path/to/runs
+
+docker run --rm --gpus all \
+  -v /path/to/wam-cache:/mnt/wam-cache \
+  -v /path/to/runs:/mnt/runs \
+  wam-harness-fastwam:cu128 \
+  wam-fastwam-libero-eval \
+    --cache-dir /mnt/wam-cache \
+    --trace-dir /mnt/runs \
+    --download-assets
+```
+
+Or run the individual gates:
 
 ```bash
 wam doctor fastwam-libero \
   --cache-dir /mnt/wam-cache \
-  --upstream-dir /opt/FastWAM \
   --json \
   --strict
 
 wam native-smoke fastwam-libero \
   --cache-dir /mnt/wam-cache \
-  --upstream-dir /opt/FastWAM \
   --trace-dir /mnt/runs \
   --require-ready
 ```
@@ -93,18 +119,54 @@ the same gates in order:
 wam-fastwam-native-smoke
 ```
 
+FastWAM images also include the end-to-end native eval acceptance wrapper:
+
+```bash
+wam-fastwam-libero-eval
+```
+
+It runs `wam prepare --asset eval`, `wam doctor --strict`, `wam native-smoke
+--require-ready`, and then the harness-owned `wam eval fastwam-libero
+--workload libero-single-task` product path. Set `WAM_PREPARE_DOWNLOAD=1` or
+pass `--download-assets` when the container should fetch missing model assets.
+The wrapper saves the eval summary in the trace directory and immediately
+validates it with `python -m wam_harness.evals.acceptance`.
+
+If the site cannot download from Hugging Face inside the GPU job, prepare the
+cache elsewhere and mount it into `/mnt/wam-cache`. For FastWAM LIBERO, the
+minimal eval asset group is:
+
+```bash
+wam prepare fastwam-libero --cache-dir /path/to/wam-cache --download --asset eval
+```
+
+This is about 25 GiB and does not download full Wan repository snapshots.
+
+To re-check a saved run without rerunning the model:
+
+```bash
+python -m wam_harness.evals.acceptance --json \
+  /mnt/runs/fastwam-libero-libero-single-task-eval-summary.json \
+  1 \
+  1.0
+```
+
+The wrapper saves this JSON report as
+`/mnt/runs/fastwam-libero-libero-single-task-acceptance.json`.
+
 It expands to:
 
 ```bash
 wam prepare fastwam-libero --cache-dir /mnt/wam-cache || prepare_status=$?
-wam doctor fastwam-libero --cache-dir /mnt/wam-cache --upstream-dir /opt/FastWAM --json --strict
-wam native-smoke fastwam-libero --cache-dir /mnt/wam-cache --upstream-dir /opt/FastWAM --trace-dir /mnt/runs --require-ready
+wam doctor fastwam-libero --cache-dir /mnt/wam-cache --json --strict
+wam native-smoke fastwam-libero --cache-dir /mnt/wam-cache --trace-dir /mnt/runs --require-ready
 ```
 
 `prepare` is allowed to report incomplete assets so the script can still print
 the stricter native readiness report from `doctor --json --strict`. The doctor
-gate is the authoritative preflight for upstream source, Python modules,
-required assets, runtime assets, and the declared model adapter.
+gate is the authoritative preflight for Python modules, required assets,
+runtime assets, optional reference source overrides, and the declared model
+adapter.
 
 The analogous backend commands are `wam-cosmos-policy-native-smoke` and
 `wam-dreamzero-native-smoke`. Override `WAM_MODEL_ID`, `WAM_CACHE_DIR`,
@@ -115,6 +177,11 @@ missing pullable assets.
 The checked-in Dockerfiles define the intended portable environments. Build or
 publish them for the runtime your site supports before expecting long simulator
 evaluations to be reproducible across machines.
+
+For Apptainer/Singularity users, convert or build from the current Dockerfile.
+Older local SIFs may only contain the FastWAM PyTorch runtime and can miss
+simulator packages such as `robosuite`; those images will pass `wam doctor` but
+fail at the LIBERO simulator import gate.
 
 The checked-in Apptainer definitions are compatibility starting points for
 sites that cannot run Docker images directly. The Dockerfiles are the current
@@ -127,33 +194,35 @@ container runtime:
 
 ```bash
 scripts/setup_fastwam_native_env.sh \
-  --upstream-dir /path/to/FastWAM \
   --venv /path/to/.venv-fastwam \
   --cache-dir /path/to/wam-cache \
   --clone
 ```
 
-The script creates a `uv` virtual environment, clones FastWAM and LIBERO if
-requested, installs the WAM Harness CLI into that environment, installs the
-FastWAM/LIBERO runtime dependencies, writes a LIBERO config file, and runs a
-Python import smoke test. It does not submit jobs, download large model assets,
-or choose a cluster launcher.
+The script creates a `uv` virtual environment, clones LIBERO if requested,
+installs the WAM Harness CLI and vendored FastWAM runtime into that
+environment, installs the FastWAM/LIBERO runtime dependencies, writes a LIBERO
+config file, and runs a Python import smoke test. It does not submit jobs,
+download large model assets, or choose a cluster launcher. It clones FastWAM
+only when `--upstream-dir` is supplied for optional reference-eval parity.
 
 After installation:
 
 ```bash
 source /path/to/.venv-fastwam/bin/activate
-export WAM_FASTWAM_REPO=/path/to/FastWAM
 export WAM_CACHE_DIR=/path/to/wam-cache
 export LIBERO_CONFIG_PATH=/path/to/wam-cache/libero/config
 
-wam doctor fastwam-libero --cache-dir "$WAM_CACHE_DIR" --upstream-dir "$WAM_FASTWAM_REPO"
+wam doctor fastwam-libero --cache-dir "$WAM_CACHE_DIR"
 wam prepare fastwam-libero --cache-dir "$WAM_CACHE_DIR"
 wam native-smoke fastwam-libero \
   --cache-dir "$WAM_CACHE_DIR" \
-  --upstream-dir "$WAM_FASTWAM_REPO" \
   --trace-dir /path/to/runs \
   --require-ready
+
+scripts/fastwam-libero-eval.sh \
+  --cache-dir "$WAM_CACHE_DIR" \
+  --trace-dir /path/to/runs
 ```
 
 Use `wam prepare ... --download --asset ...` only after the target storage mount

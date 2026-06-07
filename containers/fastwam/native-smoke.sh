@@ -3,7 +3,6 @@ set -euo pipefail
 
 model_id="${1:-${WAM_MODEL_ID:-fastwam-libero}}"
 cache_dir="${WAM_CACHE_DIR:-/mnt/wam-cache}"
-upstream_dir="${WAM_UPSTREAM_DIR:-/opt/FastWAM}"
 trace_dir="${WAM_TRACE_DIR:-/mnt/runs}"
 
 prepare_args=()
@@ -16,9 +15,8 @@ wam prepare "${model_id}" --cache-dir "${cache_dir}" "${prepare_args[@]}" || pre
 if [[ "${prepare_status}" != "0" ]]; then
   echo "wam prepare reported incomplete assets; running wam doctor for native readiness." >&2
 fi
-wam doctor "${model_id}" --cache-dir "${cache_dir}" --upstream-dir "${upstream_dir}" --json --strict
+wam doctor "${model_id}" --cache-dir "${cache_dir}" --json --strict
 wam native-smoke "${model_id}" \
   --cache-dir "${cache_dir}" \
-  --upstream-dir "${upstream_dir}" \
   --trace-dir "${trace_dir}" \
   --require-ready
