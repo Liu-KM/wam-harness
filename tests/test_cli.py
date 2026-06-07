@@ -36,6 +36,9 @@ def test_cli_list_shows_model_entries(capsys) -> None:
     assert "MODEL ID" in captured.out
     assert "fake-open-loop" in captured.out
     assert "fastwam-libero" in captured.out
+    fastwam_line = next(line for line in captured.out.splitlines() if line.startswith("fastwam-libero"))
+    assert "GPU container recommended (native: fastwam)" in fastwam_line
+    assert "official_script" not in fastwam_line
 
 
 def test_cli_info_translates_model_entry(capsys) -> None:
@@ -46,6 +49,9 @@ def test_cli_info_translates_model_entry(capsys) -> None:
     assert exit_code == 0
     assert "Model: fastwam-libero" in captured.out
     assert "Inputs: images=primary,wrist; state=proprio; prompt=task_suite" in captured.out
+    runtime_line = next(line for line in captured.out.splitlines() if line.startswith("Runtime:"))
+    assert runtime_line == "Runtime: GPU container recommended (native: fastwam)"
+    assert "official_script" not in runtime_line
     assert "Deployment: product=native_backend_migration" in captured.out
     assert "native=fastwam (vendored_native_smoke_verified)" in captured.out
     assert "native_verified=true" in captured.out

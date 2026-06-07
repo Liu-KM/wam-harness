@@ -38,6 +38,8 @@ weights/
 !src/fastwam/datasets/**
 !src/fastwam/models/
 !src/fastwam/models/**
+src/fastwam/**/__pycache__/
+src/fastwam/**/__pycache__/**
 *.ckpt
 *.pt
 *.pth

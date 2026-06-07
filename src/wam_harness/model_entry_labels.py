@@ -18,10 +18,20 @@ def model_task_label(entry: Manifest) -> str:
 
 def model_runtime_label(entry: Manifest) -> str:
     device = str(entry.defaults.get("device", "unknown"))
-    mode = str(entry.backend.get("mode", entry.backend_name))
+    mode = _product_runtime_mode(entry)
     if device.startswith("cuda"):
         return f"GPU container recommended ({mode})"
     return f"CPU ok ({mode})"
+
+
+def _product_runtime_mode(entry: Manifest) -> str:
+    deployment = entry.deployment
+    native_backend = deployment.get("native_backend") if deployment else None
+    if native_backend:
+        return f"native: {native_backend}"
+    if deployment and deployment.get("product_path"):
+        return str(deployment["product_path"])
+    return str(entry.backend.get("mode", entry.backend_name))
 
 
 def model_deployment_label(entry: Manifest) -> str:
