@@ -318,22 +318,9 @@ done
 eval_summary_path="$trace_dir/${model_id}-${workload}-eval-summary.json"
 eval_raw_output_path="$trace_dir/${model_id}-${workload}-eval-output.txt"
 acceptance_report_path="$trace_dir/${model_id}-${workload}-acceptance.json"
+eval_args+=(--summary-path "$eval_summary_path")
 print_cmd wam "${eval_args[@]}"
 wam "${eval_args[@]}" | tee "$eval_raw_output_path"
-python - "$eval_raw_output_path" "$eval_summary_path" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-raw_path = Path(sys.argv[1])
-summary_path = Path(sys.argv[2])
-text = raw_path.read_text(encoding="utf-8")
-start = text.find("{")
-if start < 0:
-    raise SystemExit(f"eval output did not contain a JSON object: {raw_path}")
-summary, _ = json.JSONDecoder().raw_decode(text[start:])
-summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-PY
 cat "$eval_summary_path"
 print_cmd python -m wam_harness.evals.acceptance --json \
   "$eval_summary_path" \

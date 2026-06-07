@@ -305,6 +305,34 @@ def test_cli_eval_dry_run(capsys, tmp_path) -> None:
     assert payload["command"]["env"]["HF_HOME"] == f"{tmp_path / 'cache'}/huggingface"
 
 
+def test_cli_eval_summary_path_writes_clean_json(capsys, tmp_path) -> None:
+    summary_path = tmp_path / "summary" / "eval-summary.json"
+
+    exit_code = main(
+        [
+            "eval",
+            "fastwam-libero",
+            "--trace-dir",
+            str(tmp_path / "runs"),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--dry-run",
+            "--summary-path",
+            str(summary_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    stdout_payload = json.loads(captured.out)
+    file_payload = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert exit_code == 0
+    assert summary_path.exists()
+    assert file_payload == stdout_payload
+    assert file_payload["status"] == "planned"
+    assert file_payload["workload"] == "libero-single-task"
+
+
 def test_cli_eval_single_task_workload_shortcuts(capsys, tmp_path) -> None:
     exit_code = main(
         [

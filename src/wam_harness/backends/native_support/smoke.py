@@ -3,16 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from wam_harness.backends.native_support.runtime import (
-    NATIVE_SMOKE_SPEC,
-    NativeRuntimeError,
-    resolve_native_runtime,
-)
 from wam_harness.core.action_contract import ActionContractError
 from wam_harness.core.invocation import Invocation
 from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
-from wam_harness.core.runtime import RuntimePlan, RuntimeResolutionError, RuntimeSpec
+from wam_harness.core.runtime import RuntimeResolutionError, RuntimeSpec
 from wam_harness.core.types import InferenceRequest, Manifest, Observation, RuntimeInfo
 
 
@@ -78,13 +73,9 @@ class NativeSmokeRunner:
                 backend_overrides=backend_overrides or {},
             )
         except RuntimeResolutionError as exc:
-            runtime_plan = _legacy_native_smoke_runtime_plan(
-                reference_manifest,
-                upstream_dir=upstream_dir,
-                cache_dir=cache_dir,
-                backend_overrides=backend_overrides or {},
-                error=exc,
-            )
+            raise NativeSmokeRunnerError(
+                f"{model_id} does not declare backend.config.native_backend for native smoke"
+            ) from exc
         invocation = Invocation.from_runtime_plan(
             registry=self.registry,
             model_id=model_id,
@@ -202,52 +193,20 @@ def native_smoke_manifest(
     upstream_dir: str | Path | None = None,
     cache_dir: str | Path | None = None,
     backend_overrides: dict[str, str] | None = None,
+    registry: Registry | None = None,
 ) -> Manifest:
     try:
-        return resolve_native_runtime(
+        return (registry or default_registry()).resolve_runtime(
             manifest,
-            NATIVE_SMOKE_SPEC,
+            NATIVE_SMOKE_RUNTIME_SPEC,
             upstream_dir=upstream_dir,
             cache_dir=cache_dir,
-            backend_overrides=backend_overrides,
+            backend_overrides=backend_overrides or {},
         ).manifest
-    except NativeRuntimeError as exc:
+    except RuntimeResolutionError as exc:
         raise NativeSmokeRunnerError(
             f"{manifest.id} does not declare backend.config.native_backend for native smoke"
         ) from exc
-
-
-def _legacy_native_smoke_runtime_plan(
-    manifest: Manifest,
-    *,
-    upstream_dir: str | Path | None = None,
-    cache_dir: str | Path | None = None,
-    backend_overrides: dict[str, str] | None = None,
-    error: Exception,
-) -> RuntimePlan:
-    try:
-        runtime_manifest = native_smoke_manifest(
-            manifest,
-            upstream_dir=upstream_dir,
-            cache_dir=cache_dir,
-            backend_overrides=backend_overrides,
-        )
-    except NativeSmokeRunnerError as exc:
-        raise NativeSmokeRunnerError(
-            f"{manifest.id} does not declare backend.config.native_backend for native smoke"
-        ) from exc
-    if runtime_manifest is manifest:
-        raise NativeSmokeRunnerError(
-            f"{manifest.id} does not declare backend.config.native_backend for native smoke"
-        ) from error
-    return RuntimePlan(
-        reference_manifest=manifest,
-        manifest=runtime_manifest,
-        mode=NATIVE_SMOKE_RUNTIME_SPEC.mode,
-        workload_name=NATIVE_SMOKE_RUNTIME_SPEC.workload_name,
-        mapped_backend=runtime_manifest.backend_name,
-        transformed=True,
-    )
 
 
 def _default_horizon(manifest: Manifest) -> int:

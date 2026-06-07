@@ -600,10 +600,11 @@ backend:
     native_backend: fastwam
 ```
 
-The product entry points read this field through a shared native runtime
-resolver. `NativeRuntimeSpec` declares the product mode and workload for an
-entry point, and `NativeRuntimePlan` records whether the model stayed on its
-regular manifest or was mapped from a reference entry to a native backend.
+The product entry points read this field through the shared
+`Registry.resolve_runtime(...)` path. `core.runtime.RuntimeSpec` declares the
+product mode and workload for an entry point, and `core.runtime.RuntimePlan`
+records whether the model stayed on its regular manifest or was mapped from a
+reference entry to a native backend.
 
 Current specs:
 

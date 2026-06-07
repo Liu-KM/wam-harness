@@ -70,6 +70,15 @@ path; `wam eval` runs the curated simulator workload declared by the model
 entry and records episode metrics plus trace metadata. Explicit `--reference`
 evals record stdout/stderr from the upstream official script.
 
+For scripts and CI, write the machine-readable summary directly instead of
+scraping stdout:
+
+```bash
+wam eval fastwam-libero \
+  --workload libero-single-task \
+  --summary-path runs/fastwam-libero-libero-single-task-eval-summary.json
+```
+
 For FastWAM LIBERO, the portable acceptance wrapper is:
 
 ```bash
@@ -79,8 +88,9 @@ scripts/fastwam-libero-eval.sh \
   --download-assets
 ```
 
-It runs prepare, doctor, simulator preflight, native smoke, native eval, then
-validates the saved summary and writes an acceptance report:
+It runs prepare, doctor, simulator preflight, native smoke, native eval with
+`--summary-path`, then validates the saved summary and writes an acceptance
+report:
 
 ```bash
 python -m wam_harness.evals.acceptance --json \

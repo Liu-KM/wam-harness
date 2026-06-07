@@ -133,7 +133,7 @@ It runs the product path in order:
 3. A LIBERO simulator preflight that creates the environment and converts one
    observation before loading the model.
 4. `wam native-smoke fastwam-libero --require-ready`.
-5. `wam eval fastwam-libero --workload libero-single-task`.
+5. `wam eval fastwam-libero --workload libero-single-task --summary-path ...`.
 6. `python -m wam_harness.evals.acceptance ...` on the saved summary.
 
 The summary is written under the selected trace directory:
@@ -145,8 +145,8 @@ The summary is written under the selected trace directory:
 ```
 
 `*-eval-output.txt` keeps the raw `wam eval` console output. The clean
-`*-eval-summary.json` contains only the JSON summary used by the acceptance
-verifier.
+`*-eval-summary.json` is written directly by `wam eval --summary-path`, so the
+wrapper does not need to scrape JSON out of stdout.
 
 Re-check an existing run without rerunning the model:
 

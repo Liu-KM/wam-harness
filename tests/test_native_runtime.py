@@ -1,34 +1,29 @@
 import pytest
 
 from wam_harness.core.manifest import load_builtin_manifest
-from wam_harness.backends.native_support.runtime import (
-    NATIVE_RUN_SPEC,
-    NATIVE_SERVE_SPEC,
-    NATIVE_SMOKE_SPEC,
-    NativeRuntimeError,
-    NativeRuntimeSpec,
-    resolve_native_runtime,
-)
+from wam_harness.core.registry import default_registry
+from wam_harness.core.runtime import RuntimeResolutionError, RuntimeSpec, SERVE_SPEC
 
 
-def test_resolve_native_runtime_maps_reference_entry_to_native_backend(tmp_path) -> None:
+def test_registry_runtime_resolver_maps_reference_entry_to_native_backend(tmp_path) -> None:
     reference = load_builtin_manifest("fastwam-libero")
+    registry = default_registry()
 
-    plan = resolve_native_runtime(
+    plan = registry.resolve_runtime(
         reference,
-        NATIVE_SERVE_SPEC,
+        SERVE_SPEC,
         upstream_dir=tmp_path / "FastWAM",
         cache_dir=tmp_path / "cache",
         backend_overrides={"task": "libero_10"},
     )
 
     assert plan.reference_manifest is reference
-    assert plan.native_migration is True
-    assert plan.native_backend == "fastwam"
-    assert plan.mode == "native_serve"
+    assert plan.transformed is True
+    assert plan.mapped_backend == "fastwam"
+    assert plan.mode == "serve"
     assert plan.workload_name == "serve"
     assert plan.manifest.backend_name == "fastwam"
-    assert plan.manifest.backend["mode"] == "native_serve"
+    assert plan.manifest.backend["mode"] == "serve"
     assert plan.manifest.backend["config"]["upstream_dir"] == str(tmp_path / "FastWAM")
     assert plan.manifest.backend["config"]["cache_dir"] == str(tmp_path / "cache")
     assert plan.manifest.backend["config"]["task"] == "libero_10"
@@ -37,35 +32,44 @@ def test_resolve_native_runtime_maps_reference_entry_to_native_backend(tmp_path)
     assert plan.manifest.workload["config"] == {"external_observation": True}
 
 
-def test_resolve_native_runtime_falls_back_to_non_native_entry() -> None:
+def test_registry_runtime_resolver_falls_back_to_non_native_entry() -> None:
     manifest = load_builtin_manifest("fake-open-loop")
+    registry = default_registry()
+    spec = RuntimeSpec(
+        mode="run",
+        workload_name="processor_smoke",
+        workload_config={"synthetic_observation": True, "episode_length": 1},
+    )
 
-    plan = resolve_native_runtime(manifest, NATIVE_RUN_SPEC)
+    plan = registry.resolve_runtime(manifest, spec)
 
     assert plan.reference_manifest is manifest
     assert plan.manifest is manifest
-    assert plan.native_migration is False
-    assert plan.native_backend is None
+    assert plan.transformed is False
+    assert plan.mapped_backend is None
     assert plan.mode == "fake"
     assert plan.workload_name == "open_loop"
 
 
-def test_resolve_native_runtime_can_require_native_backend() -> None:
+def test_registry_runtime_resolver_can_require_backend_mapping() -> None:
     manifest = load_builtin_manifest("fake-open-loop")
+    registry = default_registry()
+    spec = RuntimeSpec(
+        mode="native_smoke",
+        workload_name="native_smoke",
+        require_backend_mapping=True,
+    )
 
-    with pytest.raises(NativeRuntimeError, match="does not declare backend.config.native_backend"):
-        resolve_native_runtime(manifest, NATIVE_SMOKE_SPEC)
+    with pytest.raises(RuntimeResolutionError, match="does not declare a backend mapping"):
+        registry.resolve_runtime(manifest, spec)
 
 
 def test_native_runtime_spec_rejects_empty_mode_or_workload() -> None:
-    with pytest.raises(NativeRuntimeError, match="mode"):
-        resolve_native_runtime(
-            load_builtin_manifest("fastwam-libero"),
-            NativeRuntimeSpec(mode="", workload_name="serve"),
-        )
+    registry = default_registry()
+    manifest = load_builtin_manifest("fastwam-libero")
 
-    with pytest.raises(NativeRuntimeError, match="workload"):
-        resolve_native_runtime(
-            load_builtin_manifest("fastwam-libero"),
-            NativeRuntimeSpec(mode="native_serve", workload_name=""),
-        )
+    with pytest.raises(RuntimeResolutionError, match="mode"):
+        registry.resolve_runtime(manifest, RuntimeSpec(mode="", workload_name="serve"))
+
+    with pytest.raises(RuntimeResolutionError, match="workload"):
+        registry.resolve_runtime(manifest, RuntimeSpec(mode="serve", workload_name=""))

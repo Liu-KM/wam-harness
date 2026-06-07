@@ -5,6 +5,7 @@ import json
 import pytest
 
 from wam_harness.backends.native_support.smoke import NativeSmokeRunner
+from wam_harness.backends.native_support.runtime import native_runtime_resolver
 from wam_harness.core.invocation import Invocation
 from wam_harness.core.registry import Registry, RegistryError
 from wam_harness.core.runtime import RUN_SPEC
@@ -239,6 +240,7 @@ def test_runner_closes_backend_when_workload_creation_fails(tmp_path) -> None:
 
 def test_native_smoke_closes_backend_after_success(tmp_path) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     created: list[TrackingBackend] = []
 
     def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> TrackingBackend:
@@ -256,6 +258,7 @@ def test_native_smoke_closes_backend_after_success(tmp_path) -> None:
 
 def test_native_smoke_traces_backend_load_failure(tmp_path) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     created: list[TrackingBackend] = []
 
     def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> TrackingBackend:
@@ -301,6 +304,7 @@ def test_native_smoke_traces_lifecycle_failure_stage(
     message: str,
 ) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
 
     def factory(manifest: Manifest, profiles: list[OptimizationProfile]) -> TrackingBackend:
         return TrackingBackend(manifest, profiles, **failure_kwargs)

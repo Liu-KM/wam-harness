@@ -68,8 +68,8 @@ same wrapper is symlinked inside the FastWAM Docker image as:
 wam-fastwam-libero-eval
 ```
 
-The wrapper writes the `wam eval` JSON summary under the selected trace
-directory, for example:
+The wrapper passes `--summary-path` to `wam eval`, which writes the JSON summary
+under the selected trace directory, for example:
 
 ```text
 /path/to/runs/fastwam-libero-libero-single-task-eval-output.txt
@@ -77,9 +77,9 @@ directory, for example:
 /path/to/runs/fastwam-libero-libero-single-task-acceptance.json
 ```
 
-`*-eval-output.txt` is the raw console output. `*-eval-summary.json` is cleaned
-to contain only the JSON summary so the acceptance verifier can parse it
-reliably even when dependencies print warnings.
+`*-eval-output.txt` is the raw console output. `*-eval-summary.json` is the
+clean machine-readable summary written by the CLI, so the acceptance verifier
+does not depend on stdout parsing.
 
 You can re-check an existing summary and its trace without rerunning the model:
 

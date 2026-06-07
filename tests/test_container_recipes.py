@@ -109,8 +109,9 @@ def test_fastwam_libero_eval_acceptance_script_checks_simulator_env() -> None:
     assert '--set "mujoco_gl=$mujoco_gl"' in content
     assert '--set "pyopengl_platform=$pyopengl_platform"' in content
     assert 'eval_raw_output_path="$trace_dir/${model_id}-${workload}-eval-output.txt"' in content
+    assert 'eval_args+=(--summary-path "$eval_summary_path")' in content
     assert 'wam "${eval_args[@]}" | tee "$eval_raw_output_path"' in content
-    assert 'json.JSONDecoder().raw_decode(text[start:])' in content
+    assert "raw_decode" not in content
     assert "eval_summary_path=" in content
     assert "acceptance_report_path=" in content
     assert '${model_id}-${workload}-acceptance.json' in content

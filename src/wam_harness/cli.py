@@ -108,6 +108,11 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--cache-dir", default=None)
     eval_parser.add_argument("--upstream-dir", default=None)
     eval_parser.add_argument(
+        "--summary-path",
+        default=None,
+        help="Write the eval JSON summary to this file",
+    )
+    eval_parser.add_argument(
         "--reference",
         action="store_true",
         help="Run the official reference evaluator instead of the native product path",
@@ -306,7 +311,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         except _CLI_KNOWN_ERRORS as exc:
             _print_cli_error(exc)
             return 1
-        print(json.dumps(summary.to_dict(), indent=2, sort_keys=True))
+        output = summary.to_dict()
+        if args.summary_path is not None:
+            write_json_payload(args.summary_path, output)
+        print(json.dumps(output, indent=2, sort_keys=True))
         if summary.return_code is None:
             return 0
         return int(summary.return_code)

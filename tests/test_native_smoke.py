@@ -11,6 +11,7 @@ from wam_harness.backends.native_support.smoke import (
     NativeSmokeRunnerError,
     native_smoke_manifest,
 )
+from wam_harness.backends.native_support.runtime import native_runtime_resolver
 from wam_harness.core.preflight import PreflightError
 from wam_harness.core.registry import Registry, default_registry
 from wam_harness.core.types import (
@@ -201,6 +202,7 @@ def test_native_smoke_require_ready_rejects_runtime_asset_warning(tmp_path) -> N
 
 def test_native_smoke_rejects_action_contract_mismatch(tmp_path) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     registry.register_backend(
         "fastwam",
         lambda manifest, profiles: _BadActionShapeBackend(manifest, profiles),
@@ -222,6 +224,7 @@ def test_native_smoke_rejects_action_contract_mismatch(tmp_path) -> None:
 
 def test_native_smoke_traces_future_and_value_outputs(tmp_path) -> None:
     registry = Registry()
+    registry.register_runtime_resolver(native_runtime_resolver)
     registry.register_backend(
         "fastwam",
         lambda manifest, profiles: _FutureValueNativeBackend(manifest, profiles),
