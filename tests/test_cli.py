@@ -1,6 +1,8 @@
 import json
 from contextlib import nullcontext
 
+import pytest
+
 from eazywam.backends.fastwam import FastWAMBackend, FastWAMModelAdapter
 from eazywam.backends.native_support.runtime import native_runtime_resolver
 from eazywam.cli import build_parser, main
@@ -12,6 +14,34 @@ from eazywam.core.types import (
     Observation,
     OptimizationProfile,
 )
+
+
+def test_cli_help_shows_product_examples(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 0
+    assert "EazyWAM model workflow CLI." in captured.out
+    assert "wam list" in captured.out
+    assert "wam run fake-open-loop" in captured.out
+    assert "Use `wam <command> --help`" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_command_help_shows_command_options(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["run", "--help"])
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 0
+    assert "usage: wam run" in captured.out
+    assert "--input INPUT" in captured.out
+    assert "--output OUTPUT" in captured.out
+    assert "--opt OPT" in captured.out
+    assert captured.err == ""
 
 
 def write_fastwam_required_paths(repo) -> None:
@@ -53,7 +83,8 @@ def test_cli_info_translates_model_entry(capsys) -> None:
     assert runtime_line == "Runtime: GPU container recommended (native: fastwam)"
     assert "official_script" not in runtime_line
     assert "Deployment: product=native_backend_migration" in captured.out
-    assert "native=fastwam (vendored_native_smoke_verified)" in captured.out
+    assert "native=fastwam (single_task_eval_and_serve_verified)" in captured.out
+    assert "next=native_full_libero_eval_and_reference_parity" in captured.out
     assert "native_verified=true" in captured.out
     assert "Supported opts: action_chunk_scheduling" in captured.out
 

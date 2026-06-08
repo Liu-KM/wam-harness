@@ -16,44 +16,71 @@ trace，整理成一个以 model id 为中心的 `wam` 工作流。
 
 ## 快速上手
 
-### 安装
+先 clone 仓库：
 
 ```bash
-uv sync --dev
+git clone https://github.com/eazywam/eazywam.git
+cd eazywam
 ```
+
+### 创建 Python 环境
+
+使用 `uv` 创建一个干净的 Python 3.10+ 环境，并安装当前源码。它会安装
+`pyproject.toml` 里声明的 core package 依赖；core CLI 不需要额外执行
+`requirements.txt`。
+
+方案 A：手动安装
+
+```bash
+uv venv --python 3.10
+source .venv/bin/activate
+uv pip install -e .
+```
+
+方案 B：使用 setup 脚本
+
+```bash
+scripts/setup_core_env.sh
+source .venv/bin/activate
+```
+
+真实 WAM runtime、checkpoint、simulator 和 GPU 依赖会通过对应模型的
+`doctor` 和 `prepare` 路径处理。
+
+如果你更习惯 Conda，也可以先创建并激活 Python 3.10+ Conda 环境，然后用
+`python -m pip install -e .` 安装当前源码。
 
 ### 查看模型
 
 ```bash
-uv run wam list
-uv run wam info fake-open-loop
-uv run wam info fastwam-libero
+wam list
+wam info fastwam-libero
 ```
 
-### 运行 CPU smoke 模型
+### 验证本地 harness
 
 ```bash
-uv run wam run fake-open-loop
-uv run wam run fake-open-loop --opt fake_cache
+wam run fake-open-loop
+wam run fake-open-loop --opt fake_cache
 ```
 
-### 启动本地 policy server smoke 测试
+### 验证本地 policy server
 
 ```bash
-uv run wam serve fake-open-loop --smoke
+wam serve fake-open-loop --smoke
 ```
 
 ### 准备 FastWAM 资产
 
 ```bash
-uv run wam doctor fastwam-libero --cache-dir /path/to/wam-cache
-uv run wam prepare fastwam-libero --cache-dir /path/to/wam-cache --download --asset eval
+wam doctor fastwam-libero --cache-dir /path/to/wam-cache
+wam prepare fastwam-libero --cache-dir /path/to/wam-cache --download --asset eval
 ```
 
 ### 用一条 observation 跑 FastWAM
 
 ```bash
-uv run wam run fastwam-libero \
+wam run fastwam-libero \
   --input examples/fastwam_libero/obs.json \
   --output /tmp/fastwam-action.json \
   --cache-dir /path/to/wam-cache
@@ -64,7 +91,7 @@ uv run wam run fastwam-libero \
 需要在已经准备好的 FastWAM runtime 里运行。
 
 ```bash
-uv run wam eval fastwam-libero \
+wam eval fastwam-libero \
   --workload libero-single-task \
   --task-id 0 \
   --num-trials 1 \
@@ -79,16 +106,20 @@ ls runs/*/trace.jsonl
 
 ## 模型库
 
-| Model id | 链接 | 最小命令 | 当前状态 |
+模型库只列 curated real WAM entries。内置 smoke-test backend 只用于本地检查
+harness contract，不作为模型库 entry 展示。
+
+| Model id | 上游资源 | 起步命令 | 当前状态 |
 | --- | --- | --- | --- |
-| `fake-open-loop` | 内置 | `uv run wam run fake-open-loop` | 稳定的 CPU smoke 路径；不加载真实 WAM 权重。 |
-| `fastwam-libero` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![HF](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `uv run wam prepare fastwam-libero --download --asset eval` | 第一个真实 WAM 目标；native run/serve 路径已开始，LIBERO eval 路径可用。 |
-| `cosmos-policy-libero` | [![GitHub](https://img.shields.io/badge/GitHub-cosmos--policy-181717?logo=github)](https://github.com/NVlabs/cosmos-policy) [![HF](https://img.shields.io/badge/HF-Cosmos--Policy--LIBERO-FFD21E?logo=huggingface)](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `uv run wam info cosmos-policy-libero` | native smoke 和官方脚本 parity 集成已开始。 |
-| `dreamzero-droid-sim` | [![GitHub](https://img.shields.io/badge/GitHub-DreamZero-181717?logo=github)](https://github.com/dreamzero0/dreamzero) [![HF](https://img.shields.io/badge/HF-DreamZero--DROID-FFD21E?logo=huggingface)](https://huggingface.co/GEAR-Dreams/DreamZero-DROID) [![HF gated](https://img.shields.io/badge/HF-gated_DROID_sim_assets-FFD21E?logo=huggingface)](https://huggingface.co/owhan/DROID-sim-environments) | `uv run wam info dreamzero-droid-sim` | resident policy-server 路径已开始；DROID sim 需要更重的多 GPU runtime。 |
+| `fastwam-libero` | [source](https://github.com/yuantianyuan01/FastWAM), [checkpoint](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-libero --download --asset eval` | 第一个真实模型集成目标。SuperPod H800 上 single-task native eval、serve smoke 和 reference full-suite eval 已验证；native full-suite eval 和 parity 检查仍在进行中。 |
+| `cosmos-policy-libero` | [source](https://github.com/NVlabs/cosmos-policy), [checkpoint](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `wam info cosmos-policy-libero` | native smoke 和官方脚本 parity 集成已开始。 |
+| `dreamzero-droid-sim` | [source](https://github.com/dreamzero0/dreamzero), [checkpoint](https://huggingface.co/GEAR-Dreams/DreamZero-DROID), [sim assets](https://huggingface.co/owhan/DROID-sim-environments) | `wam info dreamzero-droid-sim` | resident policy-server 路径已开始；DROID sim 需要更重的多 GPU runtime。 |
 
 ## 常用命令
 
 ```bash
+wam --help
+wam <command> --help
 wam list
 wam info <model-id>
 wam doctor <model-id>
@@ -97,6 +128,16 @@ wam run <model-id> --input obs.json --output action.json
 wam eval <model-id> --workload <workload>
 wam serve <model-id>
 wam compare <trace-a> <trace-b>
+```
+
+## 开发
+
+core package 开发使用 `uv` 来保持本地检查可复现：
+
+```bash
+uv sync --dev
+uv run pytest
+uv run ruff check .
 ```
 
 ## 文档

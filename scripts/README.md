@@ -20,6 +20,18 @@ Not allowed here:
 - private cluster modules, account names, partitions, or scratch paths;
 - one-off maintainer launch wrappers.
 
+Core EazyWAM setup:
+
+```bash
+scripts/setup_core_env.sh
+source .venv/bin/activate
+wam list
+```
+
+This creates a lightweight `uv` virtual environment for the core package and
+installs the local checkout in editable mode. It does not install heavy backend
+runtime dependencies, download checkpoints, or configure simulators.
+
 FastWAM self-managed install:
 
 ```bash

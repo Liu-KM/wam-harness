@@ -16,44 +16,72 @@ optimization toggles, and traces into one model-centric `wam` workflow.
 
 ## Quickstart
 
-### Install
+Clone the repository first:
 
 ```bash
-uv sync --dev
+git clone https://github.com/eazywam/eazywam.git
+cd eazywam
 ```
+
+### Create A Python Environment
+
+Use `uv` to create a clean Python 3.10+ environment and install the local
+checkout. This installs the core package dependencies declared in
+`pyproject.toml`; there is no separate `requirements.txt` step for the core
+CLI.
+
+Option A: manual setup
+
+```bash
+uv venv --python 3.10
+source .venv/bin/activate
+uv pip install -e .
+```
+
+Option B: setup script
+
+```bash
+scripts/setup_core_env.sh
+source .venv/bin/activate
+```
+
+Heavy WAM runtimes, checkpoints, simulators, and GPU dependencies are handled by
+model-specific `doctor` and `prepare` paths.
+
+If you prefer Conda, create and activate a Python 3.10+ Conda environment, then
+install the checkout with `python -m pip install -e .`.
 
 ### Discover Models
 
 ```bash
-uv run wam list
-uv run wam info fake-open-loop
-uv run wam info fastwam-libero
+wam list
+wam info fastwam-libero
 ```
 
-### Run A CPU Smoke Model
+### Verify The Local Harness
 
 ```bash
-uv run wam run fake-open-loop
-uv run wam run fake-open-loop --opt fake_cache
+wam run fake-open-loop
+wam run fake-open-loop --opt fake_cache
 ```
 
-### Start A Local Policy Server Smoke Test
+### Verify The Local Policy Server
 
 ```bash
-uv run wam serve fake-open-loop --smoke
+wam serve fake-open-loop --smoke
 ```
 
 ### Prepare FastWAM Assets
 
 ```bash
-uv run wam doctor fastwam-libero --cache-dir /path/to/wam-cache
-uv run wam prepare fastwam-libero --cache-dir /path/to/wam-cache --download --asset eval
+wam doctor fastwam-libero --cache-dir /path/to/wam-cache
+wam prepare fastwam-libero --cache-dir /path/to/wam-cache --download --asset eval
 ```
 
 ### Run FastWAM With An Observation
 
 ```bash
-uv run wam run fastwam-libero \
+wam run fastwam-libero \
   --input examples/fastwam_libero/obs.json \
   --output /tmp/fastwam-action.json \
   --cache-dir /path/to/wam-cache
@@ -64,7 +92,7 @@ uv run wam run fastwam-libero \
 Run this inside a prepared FastWAM runtime.
 
 ```bash
-uv run wam eval fastwam-libero \
+wam eval fastwam-libero \
   --workload libero-single-task \
   --task-id 0 \
   --num-trials 1 \
@@ -79,16 +107,21 @@ ls runs/*/trace.jsonl
 
 ## Model Library
 
-| Model id | Links | Minimal command | Status |
+The model library lists curated real WAM entries. The built-in smoke-test
+backend is useful for checking the harness contract locally, but it is not a
+model-library entry.
+
+| Model id | Upstream | First command | Status |
 | --- | --- | --- | --- |
-| `fake-open-loop` | built in | `uv run wam run fake-open-loop` | Stable CPU smoke path; no real WAM weights. |
-| `fastwam-libero` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![HF](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `uv run wam prepare fastwam-libero --download --asset eval` | First real WAM target; native run/serve path started; LIBERO eval path available. |
-| `cosmos-policy-libero` | [![GitHub](https://img.shields.io/badge/GitHub-cosmos--policy-181717?logo=github)](https://github.com/NVlabs/cosmos-policy) [![HF](https://img.shields.io/badge/HF-Cosmos--Policy--LIBERO-FFD21E?logo=huggingface)](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `uv run wam info cosmos-policy-libero` | Native smoke and official-script parity integration started. |
-| `dreamzero-droid-sim` | [![GitHub](https://img.shields.io/badge/GitHub-DreamZero-181717?logo=github)](https://github.com/dreamzero0/dreamzero) [![HF](https://img.shields.io/badge/HF-DreamZero--DROID-FFD21E?logo=huggingface)](https://huggingface.co/GEAR-Dreams/DreamZero-DROID) [![HF gated](https://img.shields.io/badge/HF-gated_DROID_sim_assets-FFD21E?logo=huggingface)](https://huggingface.co/owhan/DROID-sim-environments) | `uv run wam info dreamzero-droid-sim` | Resident policy-server path started; DROID sim path requires a heavier multi-GPU runtime. |
+| `fastwam-libero` | [source](https://github.com/yuantianyuan01/FastWAM), [checkpoint](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-libero --download --asset eval` | First real integration target. SuperPod H800 single-task native eval, serve smoke, and reference full-suite eval are verified; native full-suite eval and parity checks are still pending. |
+| `cosmos-policy-libero` | [source](https://github.com/NVlabs/cosmos-policy), [checkpoint](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `wam info cosmos-policy-libero` | Native smoke and official-script parity integration started. |
+| `dreamzero-droid-sim` | [source](https://github.com/dreamzero0/dreamzero), [checkpoint](https://huggingface.co/GEAR-Dreams/DreamZero-DROID), [sim assets](https://huggingface.co/owhan/DROID-sim-environments) | `wam info dreamzero-droid-sim` | Resident policy-server path started; DROID sim path requires a heavier multi-GPU runtime. |
 
 ## Commands
 
 ```bash
+wam --help
+wam <command> --help
 wam list
 wam info <model-id>
 wam doctor <model-id>
@@ -97,6 +130,16 @@ wam run <model-id> --input obs.json --output action.json
 wam eval <model-id> --workload <workload>
 wam serve <model-id>
 wam compare <trace-a> <trace-b>
+```
+
+## Development
+
+Core development uses `uv` for repeatable local checks:
+
+```bash
+uv sync --dev
+uv run pytest
+uv run ruff check .
 ```
 
 ## Documentation

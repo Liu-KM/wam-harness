@@ -35,7 +35,21 @@ from eazywam.serve import serve, smoke_serve
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="wam")
+    parser = argparse.ArgumentParser(
+        prog="wam",
+        description="EazyWAM model workflow CLI.",
+        epilog="""examples:
+  wam list
+  wam info fake-open-loop
+  wam run fake-open-loop
+  wam serve fake-open-loop --smoke
+  wam run fastwam-libero --input examples/fastwam_libero/obs.json
+  wam eval fastwam-libero --workload libero-single-task --task-id 0 --num-trials 1
+
+Use `wam <command> --help` for command-specific options.
+""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("list", help="List curated WAM model entries")
@@ -181,6 +195,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--smoke-input",
         default=None,
         help="Observation JSON file to POST during --smoke",
+    )
+    serve_parser.add_argument(
+        "--smoke-timeout",
+        type=float,
+        default=300.0,
+        help="Seconds to wait for the job-local --smoke health and inference requests",
     )
 
     compare_parser = subparsers.add_parser("compare", help="Compare two recorded traces")
@@ -368,6 +388,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     cache_dir=args.cache_dir,
                     backend_overrides=backend_overrides,
                     payload=smoke_payload,
+                    timeout_s=args.smoke_timeout,
                 )
             except _CLI_KNOWN_ERRORS as exc:
                 _print_cli_error(exc)
