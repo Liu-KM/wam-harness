@@ -84,7 +84,7 @@ def test_cli_info_translates_model_entry(capsys) -> None:
     assert "official_script" not in runtime_line
     assert "Deployment: product=native_backend_migration" in captured.out
     assert "native=fastwam (single_task_eval_and_serve_verified)" in captured.out
-    assert "next=native_full_libero_eval_and_reference_parity" in captured.out
+    assert "next=statistical_native_reference_parity" in captured.out
     assert "native_verified=true" in captured.out
     assert "Supported opts: action_chunk_scheduling" in captured.out
 

@@ -122,16 +122,23 @@ deployment:
   reference_path: official_script
   product_path: native_backend_migration
   native_backend: fastwam
-  native_stage: vendored_native_smoke_verified
+  native_stage: single_task_eval_and_serve_verified
   native_verified: true
   simulator_eval: single_task_verified
+  serve: smoke_verified
+  reference_eval: full_manager_verified
+  native_full_suite_sweep: completed_9_of_10
   parity_verified: false
-  next_gate: full_libero_eval
+  next_gate: statistical_native_reference_parity
   notes:
     - Native backend uses the FastWAM runtime vendored in EazyWAM; a FastWAM upstream checkout is not required for run, serve, doctor, or native-smoke.
     - Native backend loads the released checkpoint and passes synthetic-observation smoke.
-    - LIBERO single-task simulator eval passes through wam eval.
-    - Full LIBERO manager eval and native-vs-reference parity have not passed yet.
+    - LIBERO single-task simulator eval passes through wam eval and has SuperPod H800 acceptance evidence.
+    - FastWAM serve smoke passes through wam serve with a real observation payload on SuperPod H800.
+    - Reference-mode full LIBERO manager eval passes on SuperPod H800 with num_trials=1 and 10/10 task successes.
+    - Native full-suite sweep over task_id=0..9 passes structurally on SuperPod H800 with 9/10 successes; task_id=6 fails after 700 steps.
+    - After aligning seed=42 and num_steps_wait=30, repeated task_id=6 evidence on SuperPod H800 with num_trials=5 reports native 4/5 and reference single-task 4/5.
+    - Native-vs-reference parity is not statistically established yet.
 
 eval:
   simulator: LIBERO
@@ -146,8 +153,10 @@ eval:
     task: libero_uncond_2cam224_1e-4
     checkpoint_path: "{cache_dir}/checkpoints/fastwam_release/libero_uncond_2cam224.pt"
     dataset_stats_path: "{cache_dir}/checkpoints/fastwam_release/libero_uncond_2cam224_dataset_stats.json"
+    seed: "42"
     num_gpus: "1"
     num_trials: "1"
+    num_steps_wait: "30"
     max_tasks_per_gpu: "1"
     create_only: "False"
     task_file: "null"
@@ -156,8 +165,8 @@ eval:
     redirect_common_files: "False"
     libero_config_path: "{cache_dir}/libero/config"
     libero_pythonpath: "{cache_dir}/upstreams/LIBERO"
-    mujoco_gl: osmesa
-    pyopengl_platform: osmesa
+    mujoco_gl: egl
+    pyopengl_platform: egl
   workloads:
     libero-manager:
       description: Full LIBERO manager evaluation path.
@@ -184,10 +193,12 @@ eval:
           - python
           - experiments/libero/run_libero_manager.py
           - task={task}
+          - seed={seed}
           - ckpt={checkpoint_path}
           - EVALUATION.dataset_stats_path={dataset_stats_path}
           - EVALUATION.output_dir={output_dir}/fastwam_libero
           - EVALUATION.num_trials={num_trials}
+          - EVALUATION.num_steps_wait={num_steps_wait}
           - MULTIRUN.num_gpus={num_gpus}
           - MULTIRUN.max_tasks_per_gpu={max_tasks_per_gpu}
           - MULTIRUN.task_suite_names=[libero_10]
@@ -203,7 +214,7 @@ eval:
         task_id: "0"
         gpu_id: "0"
         num_inference_steps: "10"
-        num_steps_wait: "5"
+        num_steps_wait: "30"
         visualize_future_video: "False"
       command:
         workdir: "{upstream_dir}"
@@ -223,6 +234,7 @@ eval:
           - python
           - experiments/libero/eval_libero_single.py
           - task={task}
+          - seed={seed}
           - ckpt={checkpoint_path}
           - EVALUATION.dataset_stats_path={dataset_stats_path}
           - EVALUATION.output_dir={output_dir}/fastwam_libero_single
@@ -230,12 +242,15 @@ eval:
           - EVALUATION.task_suite_name={task_suite_name}
           - EVALUATION.task_id={task_id}
           - EVALUATION.num_inference_steps={num_inference_steps}
+          - EVALUATION.num_steps_wait={num_steps_wait}
           - EVALUATION.visualize_future_video={visualize_future_video}
           - model.redirect_common_files={redirect_common_files}
           - gpu_id={gpu_id}
 
 known_gaps:
   - Requires the official LIBERO environment and MuJoCo inside the FastWAM container.
-  - The verified reference deployment uses OSMesa software rendering because NVIDIA EGL may fail to create a robosuite display on some managed GPU nodes.
+  - Current maintainer evidence uses EGL rendering on SuperPod; OSMesa may still be useful as a fallback on some managed nodes.
   - Released FastWAM eval expects the Wan VAE, T5 encoder, and tokenizer files in a DiffSynth-style cache outside this repo.
-  - This manifest exposes official manager and single-task eval workloads before simulator parity is complete.
+  - Native task_id=6 is not a deterministic failure; aligned native/reference single-task repeats both scored 4/5, with one shared failed episode.
+  - Official FastWAM manager treats MULTIRUN.task_file as a generated task-list path, so task-only manager parity needs a separate wrapper.
+  - Native-vs-reference parity is still pending statistical evidence.

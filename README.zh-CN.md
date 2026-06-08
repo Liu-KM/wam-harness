@@ -111,9 +111,9 @@ harness contract，不作为模型库 entry 展示。
 
 | Model id | 上游资源 | 起步命令 | 当前状态 |
 | --- | --- | --- | --- |
-| `fastwam-libero` | [source](https://github.com/yuantianyuan01/FastWAM), [checkpoint](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-libero --download --asset eval` | 第一个真实模型集成目标。SuperPod H800 上 single-task native eval、serve smoke 和 reference full-suite eval 已验证；native full-suite eval 和 parity 检查仍在进行中。 |
-| `cosmos-policy-libero` | [source](https://github.com/NVlabs/cosmos-policy), [checkpoint](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `wam info cosmos-policy-libero` | native smoke 和官方脚本 parity 集成已开始。 |
-| `dreamzero-droid-sim` | [source](https://github.com/dreamzero0/dreamzero), [checkpoint](https://huggingface.co/GEAR-Dreams/DreamZero-DROID), [sim assets](https://huggingface.co/owhan/DROID-sim-environments) | `wam info dreamzero-droid-sim` | resident policy-server 路径已开始；DROID sim 需要更重的多 GPU runtime。 |
+| `fastwam-libero` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![Hugging Face](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-libero --download --asset eval` | 第一个真实模型集成目标。SuperPod H800 上 single-task native eval、serve smoke、reference full-suite eval 和 native full-suite sweep 都已跑通；native sweep 是 9/10，对齐后的 task6 证据是 native 和 reference 都为 4/5。 |
+| `cosmos-policy-libero` | [![GitHub](https://img.shields.io/badge/GitHub-Cosmos--Policy-181717?logo=github)](https://github.com/NVlabs/cosmos-policy) [![Hugging Face](https://img.shields.io/badge/HF-Cosmos--Policy--LIBERO-FFD21E?logo=huggingface)](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `wam info cosmos-policy-libero` | native smoke 和官方脚本 parity 集成已开始。 |
+| `dreamzero-droid-sim` | [![GitHub](https://img.shields.io/badge/GitHub-DreamZero-181717?logo=github)](https://github.com/dreamzero0/dreamzero) [![Hugging Face](https://img.shields.io/badge/HF-DreamZero--DROID-FFD21E?logo=huggingface)](https://huggingface.co/GEAR-Dreams/DreamZero-DROID) [![Hugging Face](https://img.shields.io/badge/HF-DROID_sim_assets-FFD21E?logo=huggingface)](https://huggingface.co/owhan/DROID-sim-environments) | `wam info dreamzero-droid-sim` | resident policy-server 路径已开始；DROID sim 需要更重的多 GPU runtime。 |
 
 ## 常用命令
 

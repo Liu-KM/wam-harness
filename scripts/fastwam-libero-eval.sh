@@ -19,7 +19,7 @@ Options:
   --task-id ID           LIBERO task id. Default: 0
   --num-trials N         Number of trials. Default: 1
   --min-success-rate R   Minimum success rate for acceptance. Default: 1.0
-  --num-steps-wait N     No-op simulator warmup steps. Default: 5
+  --num-steps-wait N     No-op simulator warmup steps. Default: 30
   --max-steps N          Optional max simulator steps override.
   --libero-dir PATH      Prepared LIBERO checkout. Default:
                          ${WAM_LIBERO_DIR}, <cache>/upstreams/LIBERO, or /opt/LIBERO.
@@ -28,8 +28,8 @@ Options:
   --skip-prepare         Skip `wam prepare`.
   --skip-smoke           Skip `wam native-smoke`.
   --skip-simulator-check Skip LIBERO simulator env/observation preflight.
-  --mujoco-gl VALUE      MUJOCO_GL default. Default: osmesa
-  --pyopengl-platform V  PYOPENGL_PLATFORM default. Default: osmesa
+  --mujoco-gl VALUE      MUJOCO_GL default. Default: egl
+  --pyopengl-platform V  PYOPENGL_PLATFORM default. Default: egl
   --help                 Show this help.
 
 Expected acceptance command:
@@ -80,15 +80,15 @@ workload="libero-single-task"
 task_id="0"
 num_trials="1"
 min_success_rate="${WAM_ACCEPT_MIN_SUCCESS_RATE:-1.0}"
-num_steps_wait="5"
+num_steps_wait="30"
 max_steps=""
 libero_dir="${WAM_LIBERO_DIR:-}"
 download_assets="${WAM_PREPARE_DOWNLOAD:-0}"
 skip_prepare=0
 skip_smoke=0
 skip_simulator_check=0
-mujoco_gl="${MUJOCO_GL:-osmesa}"
-pyopengl_platform="${PYOPENGL_PLATFORM:-osmesa}"
+mujoco_gl="${MUJOCO_GL:-egl}"
+pyopengl_platform="${PYOPENGL_PLATFORM:-egl}"
 extra_sets=()
 
 while [[ $# -gt 0 ]]; do

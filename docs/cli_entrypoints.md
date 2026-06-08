@@ -165,8 +165,13 @@ For a one-command job-local server check with a real observation payload, pass
 wam serve fastwam-libero \
   --smoke \
   --smoke-input examples/fastwam_libero/obs.json \
-  --cache-dir /mnt/wam-cache
+  --cache-dir /mnt/wam-cache \
+  --smoke-timeout 300
 ```
+
+Real WAMs can take much longer than fake backends to load. `--smoke-timeout`
+sets the health-check and inference request timeout for this one-command
+server check.
 
 FastWAM product-path serving uses the vendored runtime. When intentionally
 debugging against a separate FastWAM checkout, pass it explicitly:
@@ -360,7 +365,7 @@ Task: LIBERO simulator evaluation
 Inputs: primary camera, wrist camera, robot state, task prompt
 Outputs: action chunks; horizon=32; dim=7
 Runtime: GPU container recommended
-Deployment: product=native_backend_migration; reference=official_script; native=fastwam (vendored_native_smoke_verified); native_verified=true; parity_verified=false; next=full_libero_eval
+Deployment: product=native_backend_migration; reference=official_script; native=fastwam (single_task_eval_and_serve_verified); native_verified=true; parity_verified=false; next=statistical_native_reference_parity
 Prepare: checkpoint and dataset stats required
 Optimizations: action_chunk_scheduling
 ```

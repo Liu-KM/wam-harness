@@ -218,7 +218,7 @@ def test_fastwam_native_backend_matches_official_infer_action_kwargs() -> None:
     model = _ModelRequiringNumVideoFrames()
     backend.model = model
     backend.processor = _BoundFastWAMProcessor()
-    backend.cfg = _fastwam_cfg()
+    backend.cfg = _fastwam_cfg(seed=123)
     backend.loaded = True
     backend.warmed = True
     backend.no_grad = lambda: nullcontext()
@@ -237,6 +237,7 @@ def test_fastwam_native_backend_matches_official_infer_action_kwargs() -> None:
     assert model.kwargs["num_video_frames"] == 9
     assert model.kwargs["negative_prompt"] == "avoid blur"
     assert model.kwargs["num_inference_steps"] == 7
+    assert model.kwargs["seed"] == 123
     assert isinstance(backend.model_adapter, FastWAMModelAdapter)
     assert result.backend_metadata["model_adapter"] == "fastwam_model"
     assert result.backend_metadata["fastwam_call"] == "infer_action"
@@ -372,7 +373,7 @@ class _BoundFastWAMProcessor:
         )
 
 
-def _fastwam_cfg(*, visualize_future_video: bool = False):
+def _fastwam_cfg(*, visualize_future_video: bool = False, seed=None):
     cfg = {
         "EVALUATION": {
             "negative_prompt": "avoid blur",
@@ -382,7 +383,7 @@ def _fastwam_cfg(*, visualize_future_video: bool = False):
             "tiled": False,
             "visualize_future_video": visualize_future_video,
         },
-        "seed": None,
+        "seed": seed,
         "eval_num_inference_steps": 10,
     }
     cfg = _AttrDict(cfg)

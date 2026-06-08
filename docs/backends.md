@@ -21,7 +21,11 @@ defaults, and supported optimization profiles.
   projects. This is a correctness baseline, not the long-term product backend.
 - FastWAM: real LIBERO target through `fastwam-libero`; native backend is
   registered as `fastwam` and has passed real checkpoint native smoke,
-  one-shot `wam run --input`, and single-task LIBERO eval.
+  one-shot `wam run --input`, single-task LIBERO eval, `wam serve --smoke`
+  with a real observation payload, reference full-suite LIBERO eval, and a
+  native full-suite sweep on SuperPod H800. The native sweep currently reports
+  9/10 task successes, and aligned task6 evidence reports native and reference
+  single-task paths both at 4/5.
 - Cosmos-Policy: real LIBERO target through `cosmos-policy-libero`; native
   backend is registered as `cosmos_policy` and has passed real checkpoint
   native smoke.
@@ -33,9 +37,16 @@ defaults, and supported optimization profiles.
 The native backends are becoming the public inference path model by model.
 For FastWAM, `wam run --input`, `wam serve`, and `wam native-smoke` use the
 native backend declaration, while `wam eval` runs the curated LIBERO simulator
-workloads under trace. Cosmos-Policy and DreamZero have now cleared native
-smoke; their next gates are simulator eval/parity hardening before promoting
-more public eval and serve paths.
+workloads under trace. FastWAM has SuperPod H800 evidence for single-task
+native eval, product-path serve smoke, reference full-suite manager eval, and a
+native full-suite sweep. The native sweep completed structurally but scored
+9/10, with task_id=6 failing after 700 steps in the one-trial sweep. After
+aligning `seed=42` and `num_steps_wait=30`, a repeated task6 check with
+`num_trials=5` produced native 4/5 and reference single-task 4/5, so task6 is
+not a deterministic native failure.
+Cosmos-Policy and DreamZero have now cleared native smoke; their next gates are
+simulator eval/parity hardening before promoting more public eval and serve
+paths.
 
 For FastWAM, prepare either the backend container from
 `containers/fastwam/Dockerfile` or a self-managed environment with:
@@ -138,18 +149,28 @@ wam run <model-id> --input obs.json
 `wam serve <model-id>` is the persistent policy endpoint for backends that can
 stay resident or that already expose a remote policy server.
 
-For FastWAM real simulator measurements, the current verified reference
+For FastWAM real simulator measurements, the current verified product
 entrypoint is:
 
 ```bash
 wam eval fastwam-libero \
-  --reference \
   --workload libero-single-task \
   --task-id 0 \
   --num-trials 1 \
-  --cache-dir /path/to/wam-cache \
-  --upstream-dir /path/to/FastWAM
+  --cache-dir /path/to/wam-cache
 ```
+
+The maintainer evidence for that path is a SuperPod H800 run with
+`success_rate=1.0` for `task_id=0`, `num_trials=1`.
+
+Reference-mode full-suite LIBERO manager eval has also passed on SuperPod H800
+with `num_trials=1`: all 10 `libero_10` tasks succeeded. Native full-suite eval
+has been run as a sequential sweep over the native `libero-single-task` runner:
+9/10 tasks succeeded, while task_id=6 failed after 700 simulator steps.
+After aligning `seed=42` and `num_steps_wait=30`, repeated task_id=6 evidence
+with `num_trials=5` reports native 4/5 and reference single-task 4/5.
+Native-vs-reference parity remains pending because this is not yet enough
+statistical evidence to call the paths equivalent across the full suite.
 
 Reference-mode simulator paths remain available for parity and reproduction:
 

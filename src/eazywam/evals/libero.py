@@ -153,6 +153,7 @@ class LiberoSingleTaskEvalRunner:
                 task_suite_name=context.task_suite_name,
                 task_id=context.task_id,
                 num_trials=context.num_trials,
+                seed=context.seed,
                 max_steps=context.max_steps,
                 num_steps_wait=context.num_steps_wait,
                 action_horizon=context.action_horizon,
@@ -182,6 +183,7 @@ class LiberoSingleTaskEvalRunner:
 
             stage = "libero_import"
             try:
+                _set_global_seed(context.seed)
                 _prepare_libero_environment(context)
                 modules = _import_libero_modules()
                 task_suite, task, initial_states = _load_task(
@@ -476,7 +478,7 @@ def _build_context(
         "replan_steps",
     )
     num_steps_wait = _positive_int(
-        values.get("num_steps_wait", 5),
+        values.get("num_steps_wait", 30),
         "num_steps_wait",
         allow_zero=True,
     )
@@ -604,6 +606,24 @@ def _prepare_libero_environment(context: _EvalContext) -> None:
             value = str(path)
             if value not in sys.path:
                 sys.path.insert(0, value)
+
+
+def _set_global_seed(seed: int | None) -> None:
+    if seed is None:
+        return
+    try:
+        pytorch_utils = importlib.import_module("fastwam.utils.pytorch_utils")
+    except ModuleNotFoundError as exc:
+        raise EvalRunnerError(
+            "native LIBERO eval could not import fastwam.utils.pytorch_utils "
+            "to match the official FastWAM seed setup."
+        ) from exc
+    set_global_seed = getattr(pytorch_utils, "set_global_seed", None)
+    if not callable(set_global_seed):
+        raise EvalRunnerError(
+            "fastwam.utils.pytorch_utils does not expose set_global_seed()."
+        )
+    set_global_seed(int(seed), get_worker_init_fn=False)
 
 
 def _import_libero_modules() -> _LiberoModules:

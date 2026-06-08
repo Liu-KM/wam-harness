@@ -92,6 +92,8 @@ def test_eval_runner_native_dry_run_is_default_for_fastwam_single_task(tmp_path)
     assert events[0]["native_eval"] is True
     assert events[1]["eval_runner"] == "libero_single_task"
     assert events[1]["task_id"] == 3
+    assert events[1]["seed"] == 42
+    assert events[1]["num_steps_wait"] == 30
     assert summary.command.env["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] == "1"
     assert summary.command.env["TOKENIZERS_PARALLELISM"] == "false"
     assert summary.command.env["WANDB_MODE"] == "offline"
@@ -143,15 +145,17 @@ def test_eval_runner_dry_run_plans_fastwam_single_task(tmp_path) -> None:
     assert summary.model_id == "fastwam-libero"
     assert summary.workload == "libero-single-task"
     assert "experiments/libero/eval_libero_single.py" in summary.command.argv
+    assert "seed=42" in summary.command.argv
     assert "EVALUATION.task_id=3" in summary.command.argv
+    assert "EVALUATION.num_steps_wait=30" in summary.command.argv
     assert "model.redirect_common_files=False" in summary.command.argv
     assert summary.command.env["DIFFSYNTH_DOWNLOAD_SOURCE"] == "huggingface"
     assert (
         summary.command.env["DIFFSYNTH_MODEL_BASE_PATH"]
         == f"{tmp_path / 'cache'}/diffsynth-models"
     )
-    assert summary.command.env["MUJOCO_GL"] == "osmesa"
-    assert summary.command.env["PYOPENGL_PLATFORM"] == "osmesa"
+    assert summary.command.env["MUJOCO_GL"] == "egl"
+    assert summary.command.env["PYOPENGL_PLATFORM"] == "egl"
     assert summary.command.env["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] == "1"
 
 
@@ -164,13 +168,13 @@ def test_eval_runner_fastwam_single_task_allows_gl_backend_overrides(tmp_path) -
         dry_run=True,
         workload="libero-single-task",
         overrides={
-            "mujoco_gl": "egl",
-            "pyopengl_platform": "egl",
+            "mujoco_gl": "osmesa",
+            "pyopengl_platform": "osmesa",
         },
     )
 
-    assert summary.command.env["MUJOCO_GL"] == "egl"
-    assert summary.command.env["PYOPENGL_PLATFORM"] == "egl"
+    assert summary.command.env["MUJOCO_GL"] == "osmesa"
+    assert summary.command.env["PYOPENGL_PLATFORM"] == "osmesa"
 
 
 def test_eval_runner_rejects_unknown_fastwam_eval_workload(tmp_path) -> None:
@@ -363,8 +367,10 @@ def test_cli_eval_single_task_workload_shortcuts(capsys, tmp_path) -> None:
     assert payload["model_id"] == "fastwam-libero"
     assert payload["workload"] == "libero-single-task"
     assert "experiments/libero/eval_libero_single.py" in payload["command"]["argv"]
+    assert "seed=42" in payload["command"]["argv"]
     assert "EVALUATION.task_id=3" in payload["command"]["argv"]
     assert "EVALUATION.num_trials=1" in payload["command"]["argv"]
+    assert "EVALUATION.num_steps_wait=30" in payload["command"]["argv"]
 
 
 def test_cli_eval_without_reference_runs_simulator_eval_plan(capsys, tmp_path) -> None:

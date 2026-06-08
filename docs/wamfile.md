@@ -215,7 +215,7 @@ Recommended fields:
 | `reference_path` | Existing official-script or official-server path kept for parity. |
 | `product_path` | Intended product path, for example `native_backend_migration`. |
 | `native_backend` | Registry key for the native backend target. |
-| `native_stage` | Current migration stage, such as `skeleton_unverified`, `native_smoke_verified`, or `parity_verified`. |
+| `native_stage` | Current migration stage, such as `skeleton_unverified`, `native_smoke_verified`, `single_task_eval_and_serve_verified`, or `parity_verified`. |
 | `native_verified` | Whether a real checkpoint/container native smoke has passed. |
 | `parity_verified` | Whether native output has been compared against the reference path. |
 | `next_gate` | Next concrete gate, such as `native_smoke` or `reference_parity`. |

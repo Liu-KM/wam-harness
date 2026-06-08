@@ -136,6 +136,16 @@ It runs the product path in order:
 5. `wam eval fastwam-libero --workload libero-single-task --summary-path ...`.
 6. `python -m eazywam.evals.acceptance ...` on the saved summary.
 
+The wrapper defaults to EGL rendering:
+
+```text
+MUJOCO_GL=egl
+PYOPENGL_PLATFORM=egl
+```
+
+Override those values only when the target runtime needs a different MuJoCo
+rendering backend.
+
 The summary is written under the selected trace directory:
 
 ```text
@@ -189,11 +199,70 @@ wam eval fastwam-libero \
   --set pyopengl_platform=egl
 ```
 
-The verified single-task acceptance run on SuperPod used one H800 GPU and
-completed `task_id=0`, `num_trials=1` with `success_rate=1.0`. Peak process RSS
-was about 30 GiB in the self-managed uv environment. Treat 32 GiB GPUs as the
-safer floor; 24 GiB GPUs may be tight depending on driver, runtime, and memory
-fragmentation.
+## Maintainer Verification Status
+
+Current maintainer evidence was produced on SuperPod with the self-managed uv
+runtime and one H800 GPU. The verified single-task run used
+`MUJOCO_GL=egl`, `PYOPENGL_PLATFORM=egl`, `task_id=0`, and `num_trials=1`.
+It completed with:
+
+```text
+status=ok
+success_rate=1.0
+successes=1
+total_episodes=1
+steps=357
+model_calls=36
+duration_s=715.7
+```
+
+The acceptance report also passed with `min_success_rate=1.0`, and the saved
+trace points to a native eval run with `runtime_info.backend=fastwam` and
+`runtime_info.mode=simulator_eval`.
+
+FastWAM `wam serve --smoke --smoke-input ...` has also been verified on the
+same SuperPod runtime. The smoke request returned `status=ok` with action
+shape `[32, 7]`, and the trace contained the expected resident-server lifecycle
+events from `serve_start` through `backend_close`.
+
+Reference-mode full-suite LIBERO manager eval has also been verified on
+SuperPod through:
+
+```bash
+wam eval fastwam-libero \
+  --reference \
+  --workload libero-manager \
+  --set num_trials=1
+```
+
+That run completed all 10 `libero_10` tasks with 10/10 successes and an
+official-manager average success rate of 100%.
+
+Native full-suite coverage has also been run as a sequential sweep over the
+native `libero-single-task` runner for `task_id=0..9`, `num_trials=1`. That
+native sweep completed structurally with 9/10 task successes; task_id=6 failed
+after 700 simulator steps while the reference manager result for the same task
+succeeded.
+
+Task6 has since been repeated with `num_trials=5` on SuperPod H800. Before
+control alignment, native used `num_steps_wait=5` and no explicit eval seed,
+while the official reference script used `num_steps_wait=30` and `seed=42`.
+After aligning `seed=42` and `num_steps_wait=30`, the native single-task path
+scored 4/5 and the official reference single-task path also scored 4/5, with
+the same failed episode index. This suggests task6 is not a deterministic
+native failure, but native-vs-reference parity still needs more trials and
+full-suite evidence. One caveat: the official FastWAM
+manager overwrites `MULTIRUN.task_file` with a generated full-suite task list,
+so task-only manager parity needs a wrapper around the lower-level manager
+script rather than the public manager entrypoint.
+
+This evidence proves the current single-task product path, serve smoke path,
+reference full-suite eval path, and native full-suite sweep execution. It does
+not yet prove native-vs-reference parity, long running serve stability, or a
+minimum VRAM requirement on smaller GPUs. The SuperPod Slurm `MaxRSS` for the
+single-task native eval job was about 37 GiB of process RSS; this is not a GPU
+VRAM measurement. Keep using large-memory GPUs until a separate VRAM profiling
+run establishes a tighter floor.
 
 ## Docker / Prebuilt Image Runtime
 

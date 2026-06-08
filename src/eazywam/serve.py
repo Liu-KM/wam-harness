@@ -274,6 +274,7 @@ def smoke_serve(
     cache_dir: str | Path | None = None,
     backend_overrides: dict[str, str] | None = None,
     payload: dict[str, Any] | None = None,
+    timeout_s: float = 300.0,
 ) -> dict[str, Any]:
     server = serve(
         model_id=model_id,
@@ -289,7 +290,7 @@ def smoke_serve(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=5) as response:
+        with urllib.request.urlopen(f"http://{host}:{port}/health", timeout=timeout_s) as response:
             health = json.loads(response.read().decode("utf-8"))
         request_body = json.dumps(payload or {}).encode("utf-8")
         request = urllib.request.Request(
@@ -298,7 +299,7 @@ def smoke_serve(
             headers={"content-type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=5) as response:
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:
             inference = json.loads(response.read().decode("utf-8"))
         return {"health": health, "inference": inference}
     finally:

@@ -72,8 +72,12 @@ backend paths that emit action chunks through the harness contract, with
 official scripts retained as reference evaluators.
 
 Current status: FastWAM, Cosmos-Policy, and DreamZero have passed real
-checkpoint/container native smoke. The next hardening work is simulator eval
-parity and public serving polish.
+checkpoint/container native smoke. FastWAM has also passed SuperPod H800
+single-task LIBERO native eval acceptance, product-path serve smoke, and
+reference full-suite LIBERO manager eval, and a native full-suite sweep. The
+native sweep completed with 9/10 successes; the next hardening work is FastWAM
+statistical native/reference parity, a proper native manager runner, and
+broader model serving polish.
 
 ## Phase D: Portable Serve Smoke
 
@@ -87,7 +91,9 @@ backend runtime or existing GPU allocation.
 - Logs and traces written outside the runtime image or environment.
 
 This phase is complete when a prepared runtime starts `wam serve`, runs a
-job-local fake inference smoke check, and writes trace/health output.
+job-local inference smoke check, and writes trace/health output. FastWAM has
+passed this gate on SuperPod H800 through `wam serve fastwam-libero --smoke`
+with a real observation payload.
 
 External laptop-to-node endpoint access is not a Phase B requirement. The first
 serving target is operational serving inside the environment that launched the
@@ -111,8 +117,15 @@ This phase is complete when `wam prepare fastwam-libero` can prepare or locate
 released assets, `wam run fastwam-libero --input obs.json` can emit actions
 through the native backend, and `wam eval fastwam-libero --workload
 libero-single-task --task-id 0 --num-trials 1` can run a real LIBERO simulator
-episode. Full-suite manager eval and explicit `--reference` parity evidence are
-the next hardening steps.
+episode. FastWAM has passed this single-task gate on SuperPod H800 with
+`success_rate=1.0`. Its reference full-suite manager path has also passed with
+10/10 `libero_10` task successes at `num_trials=1`; native full-suite manager
+coverage has been run as a sequential native single-task sweep with 9/10
+successes. After aligning `seed=42` and `num_steps_wait=30`, repeating
+task_id=6 with `num_trials=5` produced native 4/5 and reference single-task
+4/5. The next hardening steps are statistical native-vs-reference parity, a
+proper native manager runner, and a reference-manager task filter that does not
+rely on the official manager's overwritten `MULTIRUN.task_file`.
 
 Expected deployment target: any supported GPU environment with enough memory
 and either container support or a compatible self-managed backend environment.

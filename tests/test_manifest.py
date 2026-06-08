@@ -47,11 +47,14 @@ def test_fastwam_libero_manifest_records_native_migration_status() -> None:
     assert manifest.deployment["reference_path"] == "official_script"
     assert manifest.deployment["product_path"] == "native_backend_migration"
     assert manifest.deployment["native_backend"] == "fastwam"
-    assert manifest.deployment["native_stage"] == "vendored_native_smoke_verified"
+    assert manifest.deployment["native_stage"] == "single_task_eval_and_serve_verified"
     assert manifest.deployment["native_verified"] is True
     assert manifest.deployment["simulator_eval"] == "single_task_verified"
+    assert manifest.deployment["serve"] == "smoke_verified"
+    assert manifest.deployment["reference_eval"] == "full_manager_verified"
+    assert manifest.deployment["native_full_suite_sweep"] == "completed_9_of_10"
     assert manifest.deployment["parity_verified"] is False
-    assert manifest.deployment["next_gate"] == "full_libero_eval"
+    assert manifest.deployment["next_gate"] == "statistical_native_reference_parity"
 
 
 def test_cosmos_policy_manifest_records_native_smoke_pass() -> None:
