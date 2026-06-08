@@ -16,14 +16,22 @@ trace，整理成一个以 model id 为中心的 `wam` 工作流。
 
 ## 快速上手
 
-先 clone 仓库：
+从 PyPI 安装 core CLI：
 
 ```bash
-git clone https://github.com/eazywam/eazywam.git
+uv venv --python 3.10
+source .venv/bin/activate
+uv pip install eazywam
+```
+
+如果要开发或改源码，再 clone 仓库：
+
+```bash
+git clone https://github.com/Liu-KM/eazywam.git
 cd eazywam
 ```
 
-### 创建 Python 环境
+### 创建源码开发环境
 
 使用 `uv` 创建一个干净的 Python 3.10+ 环境，并安装当前源码。它会安装
 `pyproject.toml` 里声明的 core package 依赖；core CLI 不需要额外执行

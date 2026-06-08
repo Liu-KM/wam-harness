@@ -1,6 +1,6 @@
 [project]
 name = "eazywam"
-version = "0.0.0"
+version = "0.1.0"
 description = "An open-source deployment and acceleration harness for world-action models."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,6 +29,12 @@ dependencies = [
   "pyyaml>=6.0",
   "socksio>=1.0"
 ]
+
+[project.urls]
+Homepage = "https://github.com/Liu-KM/eazywam"
+Repository = "https://github.com/Liu-KM/eazywam"
+Issues = "https://github.com/Liu-KM/eazywam/issues"
+Documentation = "https://github.com/Liu-KM/eazywam#readme"
 
 [project.scripts]
 wam = "eazywam.cli:main"

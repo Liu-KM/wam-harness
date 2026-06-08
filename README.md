@@ -16,14 +16,22 @@ optimization toggles, and traces into one model-centric `wam` workflow.
 
 ## Quickstart
 
-Clone the repository first:
+Install the core CLI from PyPI:
 
 ```bash
-git clone https://github.com/eazywam/eazywam.git
+uv venv --python 3.10
+source .venv/bin/activate
+uv pip install eazywam
+```
+
+For development, clone the repository instead:
+
+```bash
+git clone https://github.com/Liu-KM/eazywam.git
 cd eazywam
 ```
 
-### Create A Python Environment
+### Create A Source Environment
 
 Use `uv` to create a clean Python 3.10+ environment and install the local
 checkout. This installs the core package dependencies declared in
