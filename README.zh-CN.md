@@ -106,6 +106,20 @@ wam eval fastwam-libero \
   --cache-dir /path/to/wam-cache
 ```
 
+### 在 RoboTwin 里评测 FastWAM
+
+需要在已经准备好的 FastWAM + RoboTwin runtime 里运行。
+
+```bash
+wam prepare fastwam-robotwin --cache-dir /path/to/wam-cache --download --asset eval
+
+wam eval fastwam-robotwin \
+  --workload robotwin-single-task \
+  --task-name click_alarmclock \
+  --num-episodes 1 \
+  --cache-dir /path/to/wam-cache
+```
+
 ### 查看 trace
 
 ```bash
@@ -120,6 +134,7 @@ harness contract，不作为模型库 entry 展示。
 | Model id | 上游资源 | 起步命令 | 当前状态 |
 | --- | --- | --- | --- |
 | `fastwam-libero` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![Hugging Face](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-libero --download --asset eval` | 第一个真实模型集成目标。SuperPod H800 上 single-task native eval、serve smoke、reference full-suite eval 和 native full-suite sweep 都已跑通；native sweep 是 9/10，对齐后的 task6 证据是 native 和 reference 都为 4/5。 |
+| `fastwam-robotwin` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![GitHub](https://img.shields.io/badge/GitHub-RoboTwin-181717?logo=github)](https://github.com/RoboTwin-Platform/RoboTwin) [![Hugging Face](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-robotwin --download --asset eval` | 第二个真实 FastWAM simulator 目标。SuperPod H800 上 single-task smoke、serve smoke、reference manager full-suite 和 native full-suite 都已跑通，覆盖 50 个 task x clean/randomized。reference summary 是 100/100 phases，clean mean 1.0、randomized mean 0.84；native summary 是 100/100 phases，结构性失败 0，success rate 0.88。 |
 | `cosmos-policy-libero` | [![GitHub](https://img.shields.io/badge/GitHub-Cosmos--Policy-181717?logo=github)](https://github.com/NVlabs/cosmos-policy) [![Hugging Face](https://img.shields.io/badge/HF-Cosmos--Policy--LIBERO-FFD21E?logo=huggingface)](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `wam info cosmos-policy-libero` | native smoke 和官方脚本 parity 集成已开始。 |
 | `dreamzero-droid-sim` | [![GitHub](https://img.shields.io/badge/GitHub-DreamZero-181717?logo=github)](https://github.com/dreamzero0/dreamzero) [![Hugging Face](https://img.shields.io/badge/HF-DreamZero--DROID-FFD21E?logo=huggingface)](https://huggingface.co/GEAR-Dreams/DreamZero-DROID) [![Hugging Face](https://img.shields.io/badge/HF-DROID_sim_assets-FFD21E?logo=huggingface)](https://huggingface.co/owhan/DROID-sim-environments) | `wam info dreamzero-droid-sim` | resident policy-server 路径已开始；DROID sim 需要更重的多 GPU runtime。 |
 

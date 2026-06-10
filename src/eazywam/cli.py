@@ -143,6 +143,16 @@ Use `wam <command> --help` for command-specific options.
         help="Shortcut for --set num_trials=VALUE when the selected workload supports it",
     )
     eval_parser.add_argument(
+        "--task-name",
+        default=None,
+        help="Shortcut for --set task_name=VALUE when the selected workload supports it",
+    )
+    eval_parser.add_argument(
+        "--num-episodes",
+        default=None,
+        help="Shortcut for --set num_episodes=VALUE when the selected workload supports it",
+    )
+    eval_parser.add_argument(
         "--set",
         action="append",
         default=[],
@@ -316,6 +326,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         _set_override_if_present(overrides, "task_id", args.task_id)
         _set_override_if_present(overrides, "num_trials", args.num_trials)
+        _set_override_if_present(overrides, "task_name", args.task_name)
+        _set_override_if_present(overrides, "num_episodes", args.num_episodes)
         try:
             summary = EvalRunner().run(
                 model_id=args.model_id,

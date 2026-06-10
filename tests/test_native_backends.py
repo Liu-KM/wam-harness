@@ -315,6 +315,7 @@ def test_native_backend_declares_and_checks_upstream_requirements(tmp_path) -> N
     assert requirements.upstream.status == "present"
     assert requirements.upstream.selected == str(repo.resolve())
     assert requirements.upstream.required_paths == [
+        "configs/sim_libero.yaml",
         "configs/train.yaml",
         "configs/task/libero_uncond_2cam224_1e-4.yaml",
         "configs/data/libero_2cam.yaml",

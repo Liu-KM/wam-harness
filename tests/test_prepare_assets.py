@@ -20,6 +20,17 @@ FASTWAM_EVAL_ASSETS = [
     "wan21_special_tokens_map",
 ]
 
+FASTWAM_ROBOTWIN_EVAL_ASSETS = [
+    "checkpoint",
+    "dataset_stats",
+    "wan22_vae",
+    "wan22_t5_encoder",
+    "wan21_tokenizer_spiece",
+    "wan21_tokenizer_json",
+    "wan21_tokenizer_config",
+    "wan21_special_tokens_map",
+]
+
 
 class RecordingDownloader:
     def __init__(self) -> None:
@@ -194,6 +205,41 @@ def test_prepare_resolves_fastwam_eval_asset_group_under_cache_dir(tmp_path) -> 
     assert wan22_vae.runtime is True
 
 
+def test_prepare_resolves_fastwam_robotwin_eval_asset_group_under_cache_dir(tmp_path) -> None:
+    downloader = RecordingDownloader()
+    cache_dir = tmp_path / "cache"
+
+    summary = prepare_model_entry(
+        "fastwam-robotwin",
+        cache_dir=cache_dir,
+        download=True,
+        selected_assets=["eval"],
+        downloader=downloader,
+    )
+
+    assert summary.status == "ok"
+    assert summary.selected_assets == FASTWAM_ROBOTWIN_EVAL_ASSETS
+    assert downloader.calls[0:2] == [
+        (
+            "hf://yuanty/fastwam/robotwin_uncond_3cam_384.pt",
+            cache_dir / "checkpoints" / "fastwam_release" / "robotwin_uncond_3cam_384.pt",
+        ),
+        (
+            "hf://yuanty/fastwam/robotwin_uncond_3cam_384_dataset_stats.json",
+            cache_dir
+            / "checkpoints"
+            / "fastwam_release"
+            / "robotwin_uncond_3cam_384_dataset_stats.json",
+        ),
+    ]
+    checkpoint = next(asset for asset in summary.assets if asset.name == "checkpoint")
+    dataset_stats = next(asset for asset in summary.assets if asset.name == "dataset_stats")
+    assert checkpoint.size_bytes == 12041813092
+    assert dataset_stats.size_bytes == 88715
+    assert checkpoint.required is True
+    assert dataset_stats.required is True
+
+
 def test_prepare_keeps_fastwam_legacy_runtime_asset_aliases(tmp_path) -> None:
     downloader = RecordingDownloader()
     cache_dir = tmp_path / "cache"
@@ -221,6 +267,26 @@ def test_prepare_keeps_fastwam_legacy_runtime_asset_aliases(tmp_path) -> None:
 def test_prepare_marks_fastwam_native_asset_roles(tmp_path) -> None:
     summary = prepare_model_entry(
         "fastwam-libero",
+        cache_dir=tmp_path / "cache",
+    )
+
+    roles = {asset.name: (asset.required, asset.runtime) for asset in summary.assets}
+
+    assert roles == {
+        "checkpoint": (True, True),
+        "dataset_stats": (True, True),
+        "wan22_vae": (False, True),
+        "wan22_t5_encoder": (False, True),
+        "wan21_tokenizer_spiece": (False, True),
+        "wan21_tokenizer_json": (False, True),
+        "wan21_tokenizer_config": (False, True),
+        "wan21_special_tokens_map": (False, True),
+    }
+
+
+def test_prepare_marks_fastwam_robotwin_native_asset_roles(tmp_path) -> None:
+    summary = prepare_model_entry(
+        "fastwam-robotwin",
         cache_dir=tmp_path / "cache",
     )
 

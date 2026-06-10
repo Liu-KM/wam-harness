@@ -136,12 +136,28 @@ class Registry:
         return default_runtime_plan(manifest, spec)
 
     def build_optimization_profiles(
-        self, manifest: Manifest, enabled_names: list[str]
+        self,
+        manifest: Manifest,
+        enabled_names: list[str],
+        *,
+        include_defaults: bool = False,
     ) -> list[OptimizationProfile]:
         profiles: list[OptimizationProfile] = []
         supported = set(manifest.supported_optimizations)
         manifest_profiles = manifest.optimizations.get("profiles", {})
-        for name in enabled_names:
+        selected_names = list(enabled_names)
+        if include_defaults and isinstance(manifest_profiles, dict):
+            selected_names.extend(
+                str(name)
+                for name, profile in manifest_profiles.items()
+                if isinstance(profile, dict) and profile.get("enabled") is True
+            )
+
+        seen: set[str] = set()
+        for name in selected_names:
+            if name in seen:
+                continue
+            seen.add(name)
             if name not in supported:
                 supported_text = ", ".join(sorted(supported)) or "<none>"
                 raise RegistryError(

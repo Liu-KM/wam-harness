@@ -78,7 +78,11 @@ class Invocation:
         trace_dir: str | Path | None = None,
     ) -> Invocation:
         manifest = runtime_plan.manifest
-        profiles = registry.build_optimization_profiles(manifest, enabled_opts or [])
+        profiles = registry.build_optimization_profiles(
+            manifest,
+            enabled_opts or [],
+            include_defaults=True,
+        )
         backend = registry.create_backend(manifest, profiles)
         trace: TraceWriter | None = None
         try:

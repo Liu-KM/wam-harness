@@ -75,6 +75,9 @@ def test_processors_provide_native_smoke_observations() -> None:
     fastwam = registry.create_processor(
         native_smoke_manifest(load_builtin_manifest("fastwam-libero"))
     ).smoke_observation()
+    fastwam_robotwin = registry.create_processor(
+        native_smoke_manifest(load_builtin_manifest("fastwam-robotwin"))
+    ).smoke_observation()
     cosmos = registry.create_processor(
         native_smoke_manifest(load_builtin_manifest("cosmos-policy-libero"))
     ).smoke_observation()
@@ -84,6 +87,8 @@ def test_processors_provide_native_smoke_observations() -> None:
 
     assert {"primary", "wrist"} <= set(fastwam.images)
     assert {"robot0_eef_pos", "robot0_eef_quat", "robot0_gripper_qpos"} <= set(fastwam.state)
+    assert {"head", "left_wrist", "right_wrist"} <= set(fastwam_robotwin.images)
+    assert "joint_action" in fastwam_robotwin.state
     assert {"primary", "wrist"} <= set(cosmos.images)
     assert {"robot0_gripper_qpos", "robot0_eef_pos", "robot0_eef_quat"} <= set(cosmos.state)
     assert {"right", "left", "wrist"} <= set(dreamzero.images)
@@ -100,15 +105,13 @@ def test_native_smoke_runner_fails_clearly_without_upstream_repo(tmp_path) -> No
     assert len(trace_paths) == 1
     events = read_events(trace_paths[0])
     event_names = [event["event"] for event in events]
-    assert event_names[:5] == [
-        "run_start",
-        "runtime_contract",
-        "preflight",
-        "error",
-        "run_end",
-    ]
-    contract = events[1]
-    readiness = events[2]
+    assert event_names[0] == "run_start"
+    assert "optimization_profile_status" in event_names
+    assert "runtime_contract" in event_names
+    assert "preflight" in event_names
+    assert event_names[-2:] == ["error", "run_end"]
+    contract = [event for event in events if event["event"] == "runtime_contract"][0]
+    readiness = [event for event in events if event["event"] == "preflight"][0]
     assert contract["mode"] == "native_smoke"
     assert contract["backend"] == "fastwam"
     assert contract["runtime_mode"] == "in_process"
@@ -121,9 +124,10 @@ def test_native_smoke_runner_fails_clearly_without_upstream_repo(tmp_path) -> No
     assert readiness["model_adapter"] == "fastwam_model"
     assert readiness["upstream"]["status"] == "missing"
     assert "checkpoint" in readiness["missing_required_assets"]
-    assert events[3]["stage"] == "preflight"
-    assert events[3]["recoverable"] is True
-    assert events[3]["trace_path"] == str(trace_paths[0])
+    error = [event for event in events if event["event"] == "error"][0]
+    assert error["stage"] == "preflight"
+    assert error["recoverable"] is True
+    assert error["trace_path"] == str(trace_paths[0])
 
 
 def test_cli_native_smoke_routes_to_native_backend(tmp_path, capsys) -> None:
@@ -181,8 +185,8 @@ def test_native_smoke_require_ready_rejects_runtime_asset_warning(tmp_path) -> N
     trace_paths = list((tmp_path / "runs").glob("*/trace.jsonl"))
     assert len(trace_paths) == 1
     events = read_events(trace_paths[0])
-    contract = events[1]
-    readiness = events[2]
+    contract = [event for event in events if event["event"] == "runtime_contract"][0]
+    readiness = [event for event in events if event["event"] == "preflight"][0]
     assert contract["event"] == "runtime_contract"
     assert readiness["event"] == "preflight"
     assert readiness["status"] == "warning"
@@ -197,7 +201,8 @@ def test_native_smoke_require_ready_rejects_runtime_asset_warning(tmp_path) -> N
         "wan21_tokenizer_config",
         "wan21_special_tokens_map",
     ]
-    assert events[3]["stage"] == "preflight"
+    error = [event for event in events if event["event"] == "error"][0]
+    assert error["stage"] == "preflight"
 
 
 def test_native_smoke_rejects_action_contract_mismatch(tmp_path) -> None:

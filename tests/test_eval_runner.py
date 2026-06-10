@@ -11,13 +11,24 @@ from eazywam.core.eval_runner import EvalRunner, EvalRunnerError
 from eazywam.core.manifest import load_builtin_manifest, manifest_from_dict
 from eazywam.core.registry import Registry
 from eazywam.evals.acceptance import validate_native_eval_summary
-from eazywam.evals.libero import LiberoSingleTaskEvalRunner, _import_libero_modules
+from eazywam.evals.libero import (
+    LiberoSingleTaskEvalRunner,
+    _EvalContext as LiberoEvalContext,
+    _import_libero_modules,
+    _runtime_options as libero_runtime_options,
+)
+from eazywam.evals.robotwin import (
+    RobotWinSingleTaskEvalRunner,
+    _EvalContext as RobotWinEvalContext,
+    _runtime_options as robotwin_runtime_options,
+)
 from eazywam.processors.passthrough import PassthroughProcessor
 
 
 def test_real_eval_manifests_load() -> None:
     for model_id in (
         "fastwam-libero",
+        "fastwam-robotwin",
         "cosmos-policy-libero",
         "dreamzero-droid-sim",
     ):
@@ -62,6 +73,62 @@ def test_eval_runner_dry_run_plans_fastwam(tmp_path) -> None:
         for line in summary.trace_path.read_text(encoding="utf-8").splitlines()
     ]
     assert events[0]["mode"] == "reference_eval"
+
+
+def test_libero_runtime_options_include_acceleration_modes(tmp_path) -> None:
+    context = LiberoEvalContext(
+        task_suite_name="libero_10",
+        task_id=0,
+        num_trials=1,
+        action_horizon=32,
+        replan_steps=10,
+        num_steps_wait=30,
+        max_steps=700,
+        seed=42,
+        num_inference_steps=10,
+        output_dir=tmp_path,
+        cache_dir=tmp_path / "cache",
+        values={
+            "dit_cache_mode": "video_kv",
+            "cuda_graph_mode": "off",
+            "torch_compile_mode": "auto",
+        },
+    )
+
+    assert libero_runtime_options(context) == {
+        "num_inference_steps": 10,
+        "dit_cache_mode": "video_kv",
+        "cuda_graph_mode": "off",
+        "torch_compile_mode": "auto",
+    }
+
+
+def test_robotwin_runtime_options_include_acceleration_modes(tmp_path) -> None:
+    context = RobotWinEvalContext(
+        task_name="click_alarmclock",
+        task_config="demo_randomized",
+        instruction_type="unseen",
+        num_episodes=1,
+        action_horizon=32,
+        replan_steps=24,
+        seed=42,
+        output_dir=tmp_path,
+        cache_dir=tmp_path / "cache",
+        robotwin_root=tmp_path / "RoboTwin",
+        values={
+            "num_inference_steps": 10,
+            "dit_cache_mode": "video_kv",
+            "cuda_graph_mode": "off",
+            "torch_compile_mode": "auto",
+        },
+    )
+
+    assert robotwin_runtime_options(context) == {
+        "num_inference_steps": 10,
+        "dit_cache_mode": "video_kv",
+        "cuda_graph_mode": "off",
+        "torch_compile_mode": "auto",
+    }
 
 
 def test_eval_runner_native_dry_run_is_default_for_fastwam_single_task(tmp_path) -> None:
@@ -115,6 +182,222 @@ def test_eval_runner_reference_mode_stays_available_for_fastwam(tmp_path) -> Non
     ]
     assert summary.status == "planned"
     assert events[0]["mode"] == "reference_eval"
+
+
+def test_eval_runner_dry_run_plans_fastwam_robotwin_single_task(tmp_path) -> None:
+    summary = EvalRunner().run(
+        model_id="fastwam-robotwin",
+        trace_dir=tmp_path,
+        cache_dir=tmp_path / "cache",
+        upstream_dir="/tmp/FastWAM",
+        dry_run=True,
+        reference=True,
+        workload="robotwin-single-task",
+        overrides={"task_name": "click_alarmclock", "num_episodes": "1"},
+    )
+
+    assert summary.status == "planned"
+    assert summary.model_id == "fastwam-robotwin"
+    assert summary.workload == "robotwin-single-task"
+    assert "experiments/robotwin/eval_robotwin_single.py" in summary.command.argv
+    assert "task=robotwin_uncond_3cam_384_1e-4" in summary.command.argv
+    assert "seed=42" in summary.command.argv
+    assert (
+        f"ckpt={tmp_path / 'cache'}/checkpoints/fastwam_release/robotwin_uncond_3cam_384.pt"
+        in summary.command.argv
+    )
+    assert "EVALUATION.task_name=click_alarmclock" in summary.command.argv
+    assert "EVALUATION.eval_num_episodes=1" in summary.command.argv
+
+
+def test_eval_runner_native_robotwin_dry_run_is_default(tmp_path) -> None:
+    summary = EvalRunner().run(
+        model_id="fastwam-robotwin",
+        trace_dir=tmp_path,
+        cache_dir=tmp_path / "cache",
+        upstream_dir="/tmp/FastWAM",
+        dry_run=True,
+        overrides={"task_name": "click_alarmclock", "num_episodes": "1"},
+    )
+
+    assert summary.status == "planned"
+    assert summary.workload == "robotwin-single-task"
+    assert summary.return_code is None
+    assert summary.command.argv[0:2] == ["wam-native-eval", "robotwin-single-task"]
+    assert not any("experiments/robotwin" in item for item in summary.command.argv)
+    assert summary.command.env["WAM_ROBOTWIN_ROOT"] == "/tmp/FastWAM/third_party/RoboTwin"
+    assert summary.command.env["DIFFSYNTH_DOWNLOAD_SOURCE"] == "huggingface"
+    assert (
+        summary.command.env["DIFFSYNTH_MODEL_BASE_PATH"]
+        == f"{tmp_path / 'cache'}/diffsynth-models"
+    )
+    assert summary.command.env["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] == "1"
+    events = [
+        json.loads(line)
+        for line in summary.trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    plan = next(event for event in events if event["event"] == "native_eval_plan")
+    assert plan["replan_steps"] == 24
+    assert plan["action_horizon"] == 32
+    assert plan["task_name"] == "click_alarmclock"
+
+
+def test_eval_runner_dry_run_plans_fastwam_robotwin_manager(tmp_path) -> None:
+    summary = EvalRunner().run(
+        model_id="fastwam-robotwin",
+        trace_dir=tmp_path,
+        cache_dir=tmp_path / "cache",
+        upstream_dir="/tmp/FastWAM",
+        dry_run=True,
+        reference=True,
+        workload="robotwin-manager",
+        overrides={"num_gpus": "1", "max_tasks_per_gpu": "1", "num_episodes": "1"},
+    )
+
+    assert summary.status == "planned"
+    assert summary.workload == "robotwin-manager"
+    assert summary.command.argv[:3] == [
+        "python",
+        "-m",
+        "eazywam.compat.fastwam_robotwin_manager",
+    ]
+    assert "--task-name" in summary.command.argv
+    assert summary.command.argv[summary.command.argv.index("--task-name") + 1] == "null"
+    assert "--num-episodes" in summary.command.argv
+    assert summary.command.argv[summary.command.argv.index("--num-episodes") + 1] == "1"
+    assert "--max-worker-restarts-on-invalid-setup" in summary.command.argv
+
+
+def test_eval_runner_loads_external_summary_metrics_for_robotwin_manager(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    upstream_dir = tmp_path / "FastWAM"
+    upstream_dir.mkdir()
+
+    def fake_subprocess_run(argv, **kwargs):  # noqa: ANN001, ANN202
+        output_dir = tmp_path / "missing"
+        if "--output-dir" in argv:
+            output_dir = tmp_path / str(argv[argv.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "summary.json").write_text(
+            json.dumps(
+                {
+                    "overall": {
+                        "clean_mean_success_rate": 1.0,
+                        "random_mean_success_rate": 0.5,
+                    },
+                    "per_task": [
+                        {
+                            "task_name": "click_alarmclock",
+                            "clean_success_rate": 1.0,
+                            "random_success_rate": 0.5,
+                        }
+                    ],
+                    "failures": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        stdout = kwargs.get("stdout")
+        if stdout is not None:
+            stdout.write("ok\n")
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("subprocess.run", fake_subprocess_run)
+
+    summary = EvalRunner().run(
+        model_id="fastwam-robotwin",
+        trace_dir=tmp_path / "runs",
+        cache_dir=tmp_path / "cache",
+        upstream_dir=upstream_dir,
+        dry_run=False,
+        reference=True,
+        workload="robotwin-manager",
+        overrides={"task_name": "click_alarmclock", "num_episodes": "1"},
+    )
+
+    assert summary.status == "ok"
+    assert summary.metrics["summary_metrics_found"] is True
+    assert summary.metrics["overall"]["clean_mean_success_rate"] == 1.0
+    assert summary.metrics["overall"]["random_mean_success_rate"] == 0.5
+    assert summary.metrics["per_task"][0]["task_name"] == "click_alarmclock"
+
+    events = [
+        json.loads(line)
+        for line in summary.trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    end = next(event for event in events if event["event"] == "external_eval_end")
+    assert end["metrics"]["overall"]["random_mean_success_rate"] == 0.5
+
+
+def test_eval_runner_loads_robotwin_manager_summary_on_failure(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    upstream_dir = tmp_path / "FastWAM"
+    upstream_dir.mkdir()
+
+    def fake_subprocess_run(argv, **kwargs):  # noqa: ANN001, ANN202
+        output_dir = tmp_path / str(argv[argv.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "summary.json").write_text(
+            json.dumps(
+                {
+                    "requested": {"target_valid_episodes": 2},
+                    "actual": {
+                        "valid_episodes": 0,
+                        "invalid_setup_count": 1,
+                    },
+                    "invalid_setups": [
+                        {
+                            "category": "simulator_setup_invalid",
+                            "policy_failure": False,
+                            "reason": "put_bottles_dustbin_expert_setup_index_error",
+                        }
+                    ],
+                    "failures": [
+                        {
+                            "category": "simulator_setup_invalid",
+                            "policy_failure": False,
+                            "reason": "invalid_setup_exhausted",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        stdout = kwargs.get("stdout")
+        if stdout is not None:
+            stdout.write("invalid setup\n")
+        return types.SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr("subprocess.run", fake_subprocess_run)
+
+    summary = EvalRunner().run(
+        model_id="fastwam-robotwin",
+        trace_dir=tmp_path / "runs",
+        cache_dir=tmp_path / "cache",
+        upstream_dir=upstream_dir,
+        dry_run=False,
+        reference=True,
+        workload="robotwin-manager",
+        overrides={"task_name": "put_bottles_dustbin", "num_episodes": "1"},
+    )
+
+    assert summary.status == "error"
+    assert summary.return_code == 1
+    assert summary.metrics["summary_metrics_found"] is True
+    assert summary.metrics["actual"]["invalid_setup_count"] == 1
+    assert summary.metrics["invalid_setups"][0]["policy_failure"] is False
+    assert summary.metrics["failures"][0]["reason"] == "invalid_setup_exhausted"
+
+    events = [
+        json.loads(line)
+        for line in summary.trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    end = next(event for event in events if event["event"] == "external_eval_end")
+    assert end["metrics"]["actual"]["invalid_setup_count"] == 1
 
 
 def test_eval_runner_requires_reference_for_workload_without_native_runner(tmp_path) -> None:
@@ -373,6 +656,39 @@ def test_cli_eval_single_task_workload_shortcuts(capsys, tmp_path) -> None:
     assert "EVALUATION.num_steps_wait=30" in payload["command"]["argv"]
 
 
+def test_cli_eval_robotwin_shortcuts(capsys, tmp_path) -> None:
+    exit_code = main(
+        [
+            "eval",
+            "fastwam-robotwin",
+            "--workload",
+            "robotwin-single-task",
+            "--trace-dir",
+            str(tmp_path),
+            "--cache-dir",
+            str(tmp_path / "cache"),
+            "--upstream-dir",
+            "/tmp/FastWAM",
+            "--dry-run",
+            "--reference",
+            "--task-name",
+            "click_alarmclock",
+            "--num-episodes",
+            "1",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert exit_code == 0
+    assert payload["status"] == "planned"
+    assert payload["model_id"] == "fastwam-robotwin"
+    assert payload["workload"] == "robotwin-single-task"
+    assert "EVALUATION.task_name=click_alarmclock" in payload["command"]["argv"]
+    assert "EVALUATION.eval_num_episodes=1" in payload["command"]["argv"]
+
+
 def test_cli_eval_without_reference_runs_simulator_eval_plan(capsys, tmp_path) -> None:
     exit_code = main(
         [
@@ -452,6 +768,56 @@ def test_eval_runner_native_libero_loop_runs_without_subprocess(monkeypatch, tmp
     )
     assert report.success_rate == 1.0
     assert report.expected_trials == 2
+
+
+def test_eval_runner_native_robotwin_policy_runs_without_subprocess(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr("subprocess.run", _fail_subprocess_run)
+    robotwin_root = tmp_path / "RoboTwin"
+    _install_fake_robotwin(robotwin_root, monkeypatch)
+    registry = _fake_robotwin_registry(robotwin_root)
+
+    summary = EvalRunner(registry).run(
+        model_id="fake-robotwin",
+        trace_dir=tmp_path,
+        cache_dir=tmp_path / "cache",
+        dry_run=False,
+        overrides={
+            "task_name": "click_alarmclock",
+            "num_episodes": "2",
+            "action_horizon": "2",
+            "replan_steps": "1",
+            "robotwin_root": str(robotwin_root),
+        },
+    )
+
+    assert summary.status == "ok"
+    assert summary.return_code == 0
+    assert summary.metrics["successes"] == 2
+    assert summary.metrics["requested_episodes"] == 2
+    assert summary.metrics["valid_episodes"] == 2
+    assert summary.metrics["invalid_setup_count"] == 0
+    assert summary.metrics["invalid_setups"] == []
+    assert summary.metrics["total_episodes"] == 2
+    assert summary.metrics["success_rate"] == 1.0
+    assert summary.metrics["task_name"] == "click_alarmclock"
+
+    events = [
+        json.loads(line)
+        for line in summary.trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    event_names = [event["event"] for event in events]
+    assert "external_eval_plan" not in event_names
+    assert "native_eval_plan" in event_names
+    assert event_names.count("episode_start") == 2
+    assert event_names.count("inference_end") == 2
+    assert event_names.count("simulator_step") == 2
+    assert events[-2]["event"] == "native_eval_end"
+    assert events[-2]["success_rate"] == 1.0
+    assert events[-1]["event"] == "run_end"
+    assert events[-1]["status"] == "ok"
 
 
 def test_libero_importer_handles_inner_package_exposed_as_top_level(
@@ -563,6 +929,65 @@ def _fake_libero_registry() -> Registry:
     return registry
 
 
+def _fake_robotwin_registry(robotwin_root) -> Registry:
+    manifest = manifest_from_dict(
+        {
+            "schema_version": 1,
+            "id": "fake-robotwin",
+            "display_name": "Fake RoboTwin",
+            "source": {"repo": "local/fake-robotwin"},
+            "assets": {},
+            "asset_groups": {},
+            "backend": {
+                "name": "external_eval",
+                "mode": "official_script",
+                "config": {"native_backend": "fake", "action_dim": 14},
+            },
+            "processor": {
+                "name": "passthrough",
+                "action": {"horizon": 2, "dim": 14},
+            },
+            "workload": {"name": "external_eval", "config": {}},
+            "defaults": {
+                "device": "cpu",
+                "dtype": "fp32",
+                "action_horizon": 2,
+                "replan_steps": 1,
+            },
+            "optimizations": {"supported": []},
+            "eval": {
+                "simulator": "RoboTwin",
+                "suite": "robotwin2.0",
+                "default_workload": "robotwin-single-task",
+                "defaults": {
+                    "task_name": "click_alarmclock",
+                    "task_config": "demo_randomized",
+                    "instruction_type": "unseen",
+                    "num_episodes": "1",
+                    "robotwin_root": str(robotwin_root),
+                    "seed": "42",
+                    "replan_steps": "1",
+                },
+                "workloads": {
+                    "robotwin-single-task": {
+                        "native": {"runner": "robotwin_single_task"},
+                        "defaults": {"task_name": "click_alarmclock"},
+                    }
+                },
+            },
+        }
+    )
+    registry = Registry(catalog=_SingleManifestCatalog(manifest))
+    registry.register_backend("fake", FakeBackend)
+    registry.register_processor("passthrough", PassthroughProcessor.from_manifest)
+    registry.register_runtime_resolver(native_runtime_resolver)
+    registry.register_eval_runner(
+        "robotwin_single_task",
+        lambda current_registry: RobotWinSingleTaskEvalRunner(current_registry),
+    )
+    return registry
+
+
 def _install_fake_libero(monkeypatch, tmp_path) -> None:
     root_pkg = types.ModuleType("libero")
     libero_mod = types.ModuleType("libero.libero")
@@ -631,4 +1056,118 @@ def _fake_libero_obs() -> dict[str, object]:
         "robot0_eef_pos": [0.0, 0.0, 0.0],
         "robot0_eef_quat": [0.0, 0.0, 0.0, 1.0],
         "robot0_gripper_qpos": [0.0, 0.0],
+    }
+
+
+def _install_fake_robotwin(robotwin_root, monkeypatch) -> None:
+    (robotwin_root / "script").mkdir(parents=True)
+    (robotwin_root / "policy").mkdir()
+    (robotwin_root / "task_config").mkdir()
+
+    eval_policy_mod = types.ModuleType("script.eval_policy")
+    observed_actions: list[list[float]] = []
+    observed_test_nums: list[int] = []
+
+    class FakeTaskEnv:
+        def __init__(self) -> None:
+            self.eval_success = False
+            self.take_action_cnt = 0
+            self.step_lim = 3
+            self.closed = False
+
+        def setup_demo(self, **kwargs):
+            self.setup_kwargs = kwargs
+            self.eval_success = False
+            self.take_action_cnt = 0
+
+        def play_once(self):
+            return {"info": {"episode": 0}}
+
+        def check_success(self):
+            return True
+
+        @property
+        def plan_success(self):
+            return True
+
+        def close_env(self, clear_cache=False):  # noqa: FBT002
+            self.closed = True
+
+        def get_instruction(self):
+            return "click the alarm clock"
+
+        def set_instruction(self, instruction):
+            self.instruction = instruction
+
+        def get_obs(self):
+            return _fake_robotwin_obs()
+
+        def take_action(self, action, action_type):
+            assert action_type == "qpos"
+            observed_actions.append([float(value) for value in action])
+            self.take_action_cnt += 1
+            self.eval_success = True
+
+    def fake_eval_policy(
+        task_name,
+        task_env,
+        args,
+        model,
+        st_seed,
+        test_num=100,
+        video_size=None,
+        instruction_type=None,
+    ):
+        assert task_name == "click_alarmclock"
+        assert video_size is None
+        assert instruction_type is None
+        observed_test_nums.append(int(test_num))
+        successes = 0
+        policy_module = sys.modules[args["policy_name"]]
+        for _ in range(int(test_num)):
+            policy_module.reset_model(model)
+            task_env.setup_demo()
+            task_env.set_instruction("click the alarm clock")
+            policy_module.eval(task_env, model, task_env.get_obs())
+            successes += int(task_env.eval_success)
+        assert observed_actions
+        return st_seed + int(test_num), successes
+
+    def fake_main(usr_args):
+        from pathlib import Path
+
+        assert Path.cwd() == robotwin_root
+        policy_module = sys.modules[usr_args["policy_name"]]
+        model = policy_module.get_model(usr_args)
+        task_env = FakeTaskEnv()
+        result = eval_policy_mod.eval_policy(
+            "click_alarmclock",
+            task_env,
+            {"policy_name": usr_args["policy_name"]},
+            model,
+            0,
+            test_num=100,
+        )
+        assert observed_test_nums == [int(usr_args["eval_num_episodes"])]
+        return result
+
+    eval_policy_mod.main = fake_main
+    eval_policy_mod.eval_policy = fake_eval_policy
+
+    monkeypatch.setitem(sys.modules, "script", types.ModuleType("script"))
+    monkeypatch.setitem(sys.modules, "script.eval_policy", eval_policy_mod)
+
+
+def _fake_robotwin_obs() -> dict[str, object]:
+    image = [
+        [[0, 0, 0], [1, 1, 1]],
+        [[2, 2, 2], [3, 3, 3]],
+    ]
+    return {
+        "observation": {
+            "head_camera": {"rgb": image},
+            "left_camera": {"rgb": image},
+            "right_camera": {"rgb": image},
+        },
+        "joint_action": {"vector": [0.0] * 14},
     }

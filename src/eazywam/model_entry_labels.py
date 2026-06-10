@@ -38,13 +38,12 @@ def model_deployment_label(entry: Manifest) -> str:
     deployment = entry.deployment
     if not deployment:
         return "native"
-    reference = str(deployment.get("reference_path", "none"))
     product = str(deployment.get("product_path", "unknown"))
     native = deployment.get("native_backend")
     stage = str(deployment.get("native_stage", "unknown"))
     verified = bool(deployment.get("native_verified", False))
     parity = bool(deployment.get("parity_verified", False))
-    parts = [f"product={product}", f"reference={reference}"]
+    parts = [f"product={product}"]
     if native is not None:
         parts.append(f"native={native} ({stage})")
     parts.append(f"native_verified={str(verified).lower()}")

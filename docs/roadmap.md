@@ -78,6 +78,16 @@ reference full-suite LIBERO manager eval, and a native full-suite sweep. The
 native sweep completed with 9/10 successes; the next hardening work is FastWAM
 statistical native/reference parity, a proper native manager runner, and
 broader model serving polish.
+FastWAM RoboTwin is now the second real simulator closure: SuperPod H800
+reference manager full-suite execution completed 100/100 clean/randomized
+phases over 50 tasks, and native `robotwin-single-task` execution completed the
+same 100/100 phase coverage with 0 structural failures. The next RoboTwin
+hardening work is collecting stricter native/reference success-rate parity
+evidence and turning task-side setup robustness into a public, upstreamable
+patch plan. Manager summaries already separate invalid simulator setup from
+policy failure by recording requested valid episodes, completed valid episodes,
+attempted candidate episodes, invalid candidate episodes, and invalid candidate
+reasons while preserving the requested top-level seed by default.
 
 ## Phase D: Portable Serve Smoke
 
@@ -126,6 +136,13 @@ task_id=6 with `num_trials=5` produced native 4/5 and reference single-task
 4/5. The next hardening steps are statistical native-vs-reference parity, a
 proper native manager runner, and a reference-manager task filter that does not
 rely on the official manager's overwritten `MULTIRUN.task_file`.
+As the second FastWAM simulator target, `fastwam-robotwin` has also passed
+SuperPod H800 full-suite execution gates: reference manager eval reached
+100/100 phases with clean mean 1.0 and randomized mean 0.84, and native
+single-task sweep reached 100/100 phases with 0 structural failures and
+aggregate success rate 0.88. RoboTwin invalid candidate episodes are now a
+first-class manager statistic rather than a policy failure bucket;
+process-level worker restarts are explicit, not default.
 
 Expected deployment target: any supported GPU environment with enough memory
 and either container support or a compatible self-managed backend environment.
@@ -138,7 +155,21 @@ Goal: show that a real acceleration method can be enabled as a profile.
 
 - First target: DreamZero `dit_cache` or Cosmos parallel/JPEG profiles if those
   are already exposed by the official evaluator.
-- Next target: VLA-Cache with an OpenVLA/OpenVLA-OFT backend or wrapper path.
+- FastWAM `dit_cache` L1 is the request-local video K/V cache profile:
+  `video_kv` is the default product path and `recompute` is the ablation mode.
+  It intentionally excludes cross-replan cache, token pruning, step skipping,
+  and `torch.compile`.
+- FastWAM `cuda_graph` is now the default `auto` FastWAM profile: the first
+  version captures only the action-body `mot.forward_action_with_video_cache()`
+  path and falls back to eager execution when CUDA Graph capture is unavailable.
+  SuperPod H800 evidence shows `1.91x` mean total inference latency speedup on
+  LIBERO `task_id=0`, `num_trials=1`, and `1.90x` on RoboTwin
+  `click_alarmclock`, `num_episodes=1`.
+- FastWAM `torch_compile` has been tested as a Phase-4 companion profile and
+  remains experimental. SuperPod H800 job `450449` showed that CUDA Graph alone
+  still improves the short LIBERO latency run, while CUDA Graph plus
+  `torch_compile` can trigger Inductor fallback and heavy first-request latency.
+- Later target: VLA-Cache with an OpenVLA/OpenVLA-OFT backend or wrapper path.
 - Baseline run with cache disabled.
 - Variant run with cache enabled.
 - Trace fields for cache hit/update timing, latency, memory, and output checks.

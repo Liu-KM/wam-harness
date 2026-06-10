@@ -1,0 +1,309 @@
+schema_version: 1
+id: fastwam-robotwin
+display_name: FastWAM RoboTwin
+
+source:
+  repo: yuantianyuan01/FastWAM
+  reference: "Fast-WAM: Do World Action Models Need Test-time Future Imagination?"
+  license: MIT
+  runtime_source: vendored
+  vendored_commit: 45d8e1458921d83f8ad6cf9ce993d371208dabd0
+
+assets:
+  checkpoint:
+    uri: hf://yuanty/fastwam/robotwin_uncond_3cam_384.pt
+    local_path: checkpoints/fastwam_release/robotwin_uncond_3cam_384.pt
+    size_bytes: 12041813092
+  dataset_stats:
+    uri: hf://yuanty/fastwam/robotwin_uncond_3cam_384_dataset_stats.json
+    local_path: checkpoints/fastwam_release/robotwin_uncond_3cam_384_dataset_stats.json
+    size_bytes: 88715
+  wan22_vae:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    size_bytes: 2818839170
+  wan22_t5_encoder:
+    uri: hf://Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth
+    local_path: diffsynth-models/Wan-AI/Wan2.2-TI2V-5B/models_t5_umt5-xxl-enc-bf16.pth
+    size_bytes: 11361920418
+  wan21_tokenizer_spiece:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/spiece.model
+    size_bytes: 4548313
+  wan21_tokenizer_json:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer.json
+    size_bytes: 16837417
+  wan21_tokenizer_config:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/tokenizer_config.json
+    size_bytes: 61728
+  wan21_special_tokens_map:
+    uri: hf://Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json
+    local_path: diffsynth-models/Wan-AI/Wan2.1-T2V-1.3B/google/umt5-xxl/special_tokens_map.json
+    size_bytes: 6623
+
+asset_groups:
+  eval:
+    description: Minimal asset set for FastWAM RoboTwin released eval.
+    assets:
+      - checkpoint
+      - dataset_stats
+      - wan22_vae
+      - wan22_t5_encoder
+      - wan21_tokenizer_spiece
+      - wan21_tokenizer_json
+      - wan21_tokenizer_config
+      - wan21_special_tokens_map
+  model_base:
+    description: Backward-compatible alias for the Wan2.2 files used by official eval.
+    assets:
+      - wan22_vae
+      - wan22_t5_encoder
+  tokenizer_components:
+    description: Backward-compatible alias for the Wan2.1 tokenizer files used by official eval.
+    assets:
+      - wan21_tokenizer_spiece
+      - wan21_tokenizer_json
+      - wan21_tokenizer_config
+      - wan21_special_tokens_map
+
+backend:
+  name: external_eval
+  mode: official_script
+  config:
+    upstream: FastWAM
+    simulator: RoboTwin
+    native_backend: fastwam
+    config_name: sim_robotwin
+
+processor:
+  name: fastwam_robotwin
+  observation:
+    image_views: [head, left_wrist, right_wrist]
+    state: joint_action
+    prompt: task_instruction
+  action:
+    horizon: 32
+    dim: 14
+    control_hz: null
+
+workload:
+  name: external_eval
+  config:
+    simulator: RoboTwin
+    suite: robotwin2.0
+    default_eval_workload: robotwin-single-task
+    eval_workloads:
+      - robotwin-single-task
+      - robotwin-manager
+
+defaults:
+  device: cuda
+  dtype: bf16
+  action_horizon: 32
+  replan_steps: 24
+  return_future: false
+  return_value: false
+
+optimizations:
+  supported:
+    - action_chunk_scheduling
+    - dit_cache
+    - cuda_graph
+    - torch_compile
+  profiles:
+    action_chunk_scheduling:
+      enabled: true
+      scope: simulator_eval
+      params: {}
+    dit_cache:
+      enabled: true
+      scope: native_backend
+      params:
+        mode: video_kv
+    cuda_graph:
+      enabled: true
+      scope: native_backend
+      params:
+        mode: auto
+        capture: action_body
+    torch_compile:
+      enabled: false
+      scope: native_backend
+      params:
+        mode: auto
+        target: action_body
+  measured: []
+  unsupported:
+    vla_cache: Requires the OpenVLA model family.
+
+deployment:
+  reference_path: official_script
+  product_path: native_backend_migration
+  native_backend: fastwam
+  native_stage: robotwin_full_suite_eval_and_serve_verified
+  native_verified: true
+  simulator_eval: reference_and_native_full_suite_verified
+  serve: smoke_verified
+  reference_eval: full_suite_verified
+  manager_light_eval: verified
+  manager_light_evidence: superpod_job_447930
+  full_suite_sweep: completed_100_of_100
+  full_suite_evidence: superpod_jobs_447933_449821
+  native_full_suite_sweep: completed_100_of_100
+  native_full_suite_evidence: superpod_jobs_448299_449814_449815_449827
+  parity_verified: false
+  next_gate: robotwin_runtime_patch_documentation_and_statistical_parity
+  notes:
+    - RoboTwin support is the second FastWAM simulator integration target after LIBERO.
+    - The released RoboTwin checkpoint is distinct from the released LIBERO checkpoint.
+    - SuperPod H800 reference/native single-task smoke is verified for click_alarmclock, click_bell, and press_stapler with one episode each.
+    - SuperPod job 447930 verified robotwin-manager light eval on click_alarmclock with clean and randomized success rates both 1.0.
+    - SuperPod job 449811 verified wam serve fastwam-robotwin --smoke with the real checkpoint and returned a [32, 14] action chunk.
+    - SuperPod jobs 447933 and 449821 verified reference robotwin-manager full-suite execution over 50 tasks x clean/randomized with one episode per phase; final status ok, clean mean 1.0, randomized mean 0.84.
+    - SuperPod jobs 448299, 449814, 449815, and 449827 verified native robotwin-single-task execution over the same 100 phases; final status ok, structural failures 0, aggregate success rate 0.88.
+    - RoboTwin manager summaries report requested valid episodes, completed valid episodes, attempted candidate episodes, invalid candidate episodes, and invalid candidate reasons so simulator setup invalidity is not counted as policy failure.
+    - FastWAM dit_cache is a request-local video K/V cache toggle. The default mode is video_kv; mode=recompute is for ablation only.
+
+eval:
+  simulator: RoboTwin
+  suite: robotwin2.0
+  default_workload: robotwin-single-task
+  upstream:
+    repo: yuantianyuan01/FastWAM
+    commit: 45d8e14
+    local_env: WAM_FASTWAM_REPO
+    default_dir: /workspace/FastWAM
+  defaults:
+    task: robotwin_uncond_3cam_384_1e-4
+    checkpoint_path: "{cache_dir}/checkpoints/fastwam_release/robotwin_uncond_3cam_384.pt"
+    dataset_stats_path: "{cache_dir}/checkpoints/fastwam_release/robotwin_uncond_3cam_384_dataset_stats.json"
+    seed: "42"
+    gpu_id: "0"
+    num_gpus: "1"
+    max_tasks_per_gpu: "1"
+    task_name: click_alarmclock
+    task_config: demo_randomized
+    instruction_type: unseen
+    num_episodes: "1"
+    max_worker_restarts_on_invalid_setup: "0"
+    resume: "False"
+    replan_steps: "24"
+    num_inference_steps: "10"
+    action_horizon: "null"
+    sigma_shift: "null"
+    text_cfg_scale: "1.0"
+    negative_prompt: ""
+    rand_device: cpu
+    tiled: "False"
+    timing_enabled: "False"
+    skip_get_obs_within_replan: "True"
+    diffsynth_download_source: huggingface
+    diffsynth_model_base_path: "{cache_dir}/diffsynth-models"
+    xdg_cache_home: "{cache_dir}"
+    matplotlib_config_dir: "{cache_dir}"
+    redirect_common_files: "False"
+    robotwin_root: "{upstream_dir}/third_party/RoboTwin"
+  workloads:
+    robotwin-single-task:
+      description: One official RoboTwin task evaluator used as a fast smoke path.
+      native:
+        runner: robotwin_single_task
+      command:
+        workdir: "{upstream_dir}"
+        env:
+          DIFFSYNTH_DOWNLOAD_SOURCE: "{diffsynth_download_source}"
+          DIFFSYNTH_MODEL_BASE_PATH: "{diffsynth_model_base_path}"
+          HF_HOME: "{cache_dir}/huggingface"
+          HF_HUB_CACHE: "{cache_dir}/huggingface/hub"
+          MPLCONFIGDIR: "{matplotlib_config_dir}"
+          TOKENIZERS_PARALLELISM: "false"
+          TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+          WANDB_MODE: offline
+          XDG_CACHE_HOME: "{xdg_cache_home}"
+        argv:
+          - python
+          - experiments/robotwin/eval_robotwin_single.py
+          - task={task}
+          - seed={seed}
+          - ckpt={checkpoint_path}
+          - EVALUATION.dataset_stats_path={dataset_stats_path}
+          - EVALUATION.robotwin_root={robotwin_root}
+          - EVALUATION.output_dir={output_dir}/fastwam_robotwin
+          - EVALUATION.task_name={task_name}
+          - EVALUATION.task_config={task_config}
+          - EVALUATION.instruction_type={instruction_type}
+          - EVALUATION.eval_num_episodes={num_episodes}
+          - EVALUATION.action_horizon={action_horizon}
+          - EVALUATION.replan_steps={replan_steps}
+          - EVALUATION.num_inference_steps={num_inference_steps}
+          - EVALUATION.sigma_shift={sigma_shift}
+          - EVALUATION.text_cfg_scale={text_cfg_scale}
+          - EVALUATION.negative_prompt={negative_prompt}
+          - EVALUATION.rand_device={rand_device}
+          - EVALUATION.tiled={tiled}
+          - EVALUATION.timing_enabled={timing_enabled}
+          - EVALUATION.skip_get_obs_within_replan={skip_get_obs_within_replan}
+          - model.redirect_common_files={redirect_common_files}
+          - gpu_id={gpu_id}
+    robotwin-manager:
+      description: EazyWAM manager wrapper over official RoboTwin single-task clean/random phases.
+      defaults:
+        task_name: "null"
+      summary_metrics_path: "{output_dir}/fastwam_robotwin/summary.json"
+      command:
+        workdir: "{upstream_dir}"
+        env:
+          DIFFSYNTH_DOWNLOAD_SOURCE: "{diffsynth_download_source}"
+          DIFFSYNTH_MODEL_BASE_PATH: "{diffsynth_model_base_path}"
+          HF_HOME: "{cache_dir}/huggingface"
+          HF_HUB_CACHE: "{cache_dir}/huggingface/hub"
+          MPLCONFIGDIR: "{matplotlib_config_dir}"
+          TOKENIZERS_PARALLELISM: "false"
+          TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD: "1"
+          WANDB_MODE: offline
+          XDG_CACHE_HOME: "{xdg_cache_home}"
+        argv:
+          - python
+          - -m
+          - eazywam.compat.fastwam_robotwin_manager
+          - --upstream-dir
+          - "{upstream_dir}"
+          - --robotwin-root
+          - "{robotwin_root}"
+          - --output-dir
+          - "{output_dir}/fastwam_robotwin"
+          - --task
+          - "{task}"
+          - --seed
+          - "{seed}"
+          - --ckpt
+          - "{checkpoint_path}"
+          - --dataset-stats-path
+          - "{dataset_stats_path}"
+          - --task-name
+          - "{task_name}"
+          - --instruction-type
+          - "{instruction_type}"
+          - --num-episodes
+          - "{num_episodes}"
+          - --max-worker-restarts-on-invalid-setup
+          - "{max_worker_restarts_on_invalid_setup}"
+          - --replan-steps
+          - "{replan_steps}"
+          - --num-inference-steps
+          - "{num_inference_steps}"
+          - --skip-get-obs-within-replan
+          - "{skip_get_obs_within_replan}"
+          - --redirect-common-files
+          - "{redirect_common_files}"
+          - --gpu-id
+          - "{gpu_id}"
+          - --resume
+          - "{resume}"
+
+known_gaps:
+  - Requires the official RoboTwin environment and assets inside the FastWAM runtime container.
+  - RoboTwin invalid candidate episodes are reported separately from policy failure; a public upstreamable robustness patch plan for brittle task-side expert/demo setup remains pending.
+  - Statistical native-vs-reference success-rate parity across the broader RoboTwin task set is pending.

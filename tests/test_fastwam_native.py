@@ -27,6 +27,42 @@ def test_default_registry_exposes_fastwam_native_backend() -> None:
     assert info.metadata["native"] is True
 
 
+def test_fastwam_manifests_build_dit_cache_profile() -> None:
+    registry = default_registry()
+
+    for model_id in ("fastwam-libero", "fastwam-robotwin"):
+        manifest = registry.load_manifest(model_id)
+        profiles = registry.build_optimization_profiles(manifest, ["dit_cache"])
+
+        assert "dit_cache" in manifest.supported_optimizations
+        assert profiles[0].name == "dit_cache"
+        assert profiles[0].params == {"mode": "video_kv"}
+
+
+def test_fastwam_manifests_build_cuda_graph_profile() -> None:
+    registry = default_registry()
+
+    for model_id in ("fastwam-libero", "fastwam-robotwin"):
+        manifest = registry.load_manifest(model_id)
+        profiles = registry.build_optimization_profiles(manifest, ["cuda_graph"])
+
+        assert "cuda_graph" in manifest.supported_optimizations
+        assert profiles[0].name == "cuda_graph"
+        assert profiles[0].params == {"mode": "auto", "capture": "action_body"}
+
+
+def test_fastwam_manifests_build_torch_compile_profile() -> None:
+    registry = default_registry()
+
+    for model_id in ("fastwam-libero", "fastwam-robotwin"):
+        manifest = registry.load_manifest(model_id)
+        profiles = registry.build_optimization_profiles(manifest, ["torch_compile"])
+
+        assert "torch_compile" in manifest.supported_optimizations
+        assert profiles[0].name == "torch_compile"
+        assert profiles[0].params == {"mode": "auto", "target": "action_body"}
+
+
 def test_default_registry_exposes_fastwam_libero_processor() -> None:
     registry = default_registry()
     manifest = load_builtin_manifest("fastwam-libero")
@@ -237,10 +273,226 @@ def test_fastwam_native_backend_matches_official_infer_action_kwargs() -> None:
     assert model.kwargs["num_video_frames"] == 9
     assert model.kwargs["negative_prompt"] == "avoid blur"
     assert model.kwargs["num_inference_steps"] == 7
+    assert model.kwargs["cache_mode"] == "video_kv"
     assert model.kwargs["seed"] == 123
     assert isinstance(backend.model_adapter, FastWAMModelAdapter)
     assert result.backend_metadata["model_adapter"] == "fastwam_model"
     assert result.backend_metadata["fastwam_call"] == "infer_action"
+
+
+def test_fastwam_model_adapter_passes_profile_cache_mode_and_metadata() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "recompute"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+    )
+
+    call = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+
+    assert adapter.model.kwargs["cache_mode"] == "recompute"
+    assert call.metadata["fastwam_call"] == "infer_action"
+    assert call.metadata["dit_cache_enabled"] is False
+    assert call.metadata["dit_cache_mode"] == "recompute"
+    assert call.metadata["dit_cache_hook"] == "fastwam_video_kv_cache"
+    assert call.metadata["num_inference_steps"] == 10
+    assert call.metadata["video_seq_len"] == 2
+    assert call.metadata["action_seq_len"] == 32
+    assert call.metadata["cache_layers"] == 0
+    assert call.metadata["cache_prefill_wall_ms"] is None
+    assert call.metadata["denoise_wall_ms"] == 1.0
+    assert call.metadata["cache_bytes"] is None
+
+
+def test_fastwam_model_adapter_runtime_options_switch_cached_and_recompute_modes() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "video_kv"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+    )
+
+    cached = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+    recompute = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+            runtime_options={"dit_cache_mode": "recompute"},
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+
+    assert cached.metadata["dit_cache_enabled"] is True
+    assert cached.metadata["dit_cache_mode"] == "video_kv"
+    assert cached.metadata["cache_layers"] == 1
+    assert cached.metadata["cache_prefill_wall_ms"] == 0.5
+    assert cached.metadata["cache_bytes"] == 128
+    assert recompute.metadata["dit_cache_enabled"] is False
+    assert recompute.metadata["dit_cache_mode"] == "recompute"
+    assert recompute.metadata["cache_layers"] == 0
+
+
+def test_fastwam_model_adapter_passes_cuda_graph_profile_mode_and_metadata() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "video_kv"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+        cuda_graph_params={"mode": "auto", "capture": "action_body"},
+        cuda_graph_enabled=True,
+    )
+
+    call = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+
+    assert adapter.model.kwargs["cache_mode"] == "video_kv"
+    assert adapter.model.kwargs["cuda_graph_mode"] == "auto"
+    assert call.metadata["cuda_graph_enabled"] is True
+    assert call.metadata["cuda_graph_mode"] == "auto"
+    assert call.metadata["cuda_graph_hook"] == "fastwam_cuda_graph_action_body"
+
+
+def test_fastwam_model_adapter_runtime_options_disable_cuda_graph() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "video_kv"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+        cuda_graph_params={"mode": "auto"},
+        cuda_graph_enabled=True,
+    )
+
+    call = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+            runtime_options={"cuda_graph_mode": "off"},
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+
+    assert adapter.model.kwargs["cuda_graph_mode"] == "off"
+    assert call.metadata["cuda_graph_enabled"] is False
+    assert call.metadata["cuda_graph_mode"] == "off"
+
+
+def test_fastwam_model_adapter_passes_torch_compile_profile_mode_and_metadata() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "video_kv"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+        torch_compile_params={"mode": "auto", "target": "action_body"},
+        torch_compile_enabled=True,
+    )
+
+    call = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+
+    assert adapter.model.kwargs["torch_compile_mode"] == "auto"
+    assert call.metadata["torch_compile_enabled"] is True
+    assert call.metadata["torch_compile_mode"] == "auto"
+    assert call.metadata["torch_compile_hook"] == "fastwam_torch_compile_action_body"
+
+
+def test_fastwam_model_adapter_runtime_options_disable_torch_compile() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "video_kv"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+        torch_compile_params={"mode": "auto"},
+        torch_compile_enabled=True,
+    )
+
+    call = adapter.infer(
+        InferenceRequest(
+            observation=Observation(images={}, prompt="open the drawer"),
+            action_horizon=32,
+            replan_steps=10,
+            runtime_options={"torch_compile_mode": "off"},
+        ),
+        {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+    )
+
+    assert adapter.model.kwargs["torch_compile_mode"] == "off"
+    assert call.metadata["torch_compile_enabled"] is False
+    assert call.metadata["torch_compile_mode"] == "off"
+
+
+def test_fastwam_model_adapter_rejects_invalid_cache_mode() -> None:
+    adapter = FastWAMModelAdapter(
+        model=_ModelRequiringNumVideoFrames(),
+        cfg=_fastwam_cfg(),
+        checkpoint_path=None,
+        dataset_stats_path=None,
+        config={},
+        dit_cache_params={"mode": "bad"},
+        no_grad_factory=lambda: nullcontext(),
+        error_cls=FastWAMNativeBackendError,
+    )
+
+    with pytest.raises(FastWAMNativeBackendError, match="dit_cache mode"):
+        adapter.infer(
+            InferenceRequest(
+                observation=Observation(images={}, prompt="open the drawer"),
+                action_horizon=32,
+                replan_steps=10,
+            ),
+            {"prompt": "prompt", "input_image": "image", "proprio": "proprio"},
+        )
 
 
 def test_fastwam_native_backend_uses_infer_joint_for_future_video() -> None:
@@ -269,6 +521,7 @@ def test_fastwam_native_backend_uses_infer_joint_for_future_video() -> None:
     assert model.action_called is False
     assert model.joint_kwargs["action_horizon"] == 32
     assert model.joint_kwargs["num_video_frames"] == 9
+    assert "cache_mode" not in model.joint_kwargs
     assert result.backend_metadata["fastwam_call"] == "infer_joint"
     assert result.backend_metadata["future_video_present"] is True
     assert result.future_frames == {
@@ -287,6 +540,7 @@ def test_fastwam_model_adapter_close_releases_model_reference() -> None:
         checkpoint_path=None,
         dataset_stats_path=None,
         config={},
+        dit_cache_params={},
         no_grad_factory=lambda: nullcontext(),
         error_cls=FastWAMNativeBackendError,
     )
@@ -316,6 +570,72 @@ def test_fastwam_native_backend_rejects_invalid_future_video_config() -> None:
         backend._validate_visualize_future_video_config(cfg)
 
 
+def test_fastwam_dit_cache_profile_status_planned_fallback_and_applied() -> None:
+    registry = default_registry()
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["backend"] = {"name": "fastwam", "mode": "native", "config": {}}
+    manifest = manifest_from_dict(data)
+    profiles = registry.build_optimization_profiles(manifest, ["dit_cache"])
+    backend = registry.create_backend(manifest, profiles)
+
+    planned = backend.plan_optimization_profiles(profiles)
+    fallback = backend.apply_loaded_optimization_profiles(profiles)
+    backend.model = _ModelWithFastWAMCacheHook()
+    backend.loaded = True
+    applied = backend.apply_loaded_optimization_profiles(profiles)
+
+    assert planned[0]["state"] == "planned"
+    assert planned[0]["hook"] == "fastwam_video_kv_cache"
+    assert fallback[0]["state"] == "fallback"
+    assert fallback[0]["reason"] == "backend_not_loaded"
+    assert applied[0]["state"] == "applied"
+    assert applied[0]["hook"] == "fastwam_video_kv_cache"
+
+
+def test_fastwam_cuda_graph_profile_status_planned_fallback_and_applied() -> None:
+    registry = default_registry()
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["backend"] = {"name": "fastwam", "mode": "native", "config": {}}
+    manifest = manifest_from_dict(data)
+    profiles = registry.build_optimization_profiles(manifest, ["cuda_graph"])
+    backend = registry.create_backend(manifest, profiles)
+
+    planned = backend.plan_optimization_profiles(profiles)
+    fallback = backend.apply_loaded_optimization_profiles(profiles)
+    backend.model = _ModelWithFastWAMCudaGraphHook()
+    backend.loaded = True
+    applied = backend.apply_loaded_optimization_profiles(profiles)
+
+    assert planned[0]["state"] == "planned"
+    assert planned[0]["hook"] == "fastwam_cuda_graph_action_body"
+    assert fallback[0]["state"] == "fallback"
+    assert fallback[0]["reason"] == "backend_not_loaded"
+    assert applied[0]["state"] == "applied"
+    assert applied[0]["hook"] == "fastwam_cuda_graph_action_body"
+
+
+def test_fastwam_torch_compile_profile_status_planned_fallback_and_applied() -> None:
+    registry = default_registry()
+    data = load_builtin_manifest("fastwam-libero").to_dict()
+    data["backend"] = {"name": "fastwam", "mode": "native", "config": {}}
+    manifest = manifest_from_dict(data)
+    profiles = registry.build_optimization_profiles(manifest, ["torch_compile"])
+    backend = registry.create_backend(manifest, profiles)
+
+    planned = backend.plan_optimization_profiles(profiles)
+    fallback = backend.apply_loaded_optimization_profiles(profiles)
+    backend.model = _ModelWithFastWAMTorchCompileHook()
+    backend.loaded = True
+    applied = backend.apply_loaded_optimization_profiles(profiles)
+
+    assert planned[0]["state"] == "planned"
+    assert planned[0]["hook"] == "fastwam_torch_compile_action_body"
+    assert fallback[0]["state"] == "fallback"
+    assert fallback[0]["reason"] == "backend_not_loaded"
+    assert applied[0]["state"] == "applied"
+    assert applied[0]["hook"] == "fastwam_torch_compile_action_body"
+
+
 class _ModelRequiringNumVideoFrames:
     kwargs = None
 
@@ -335,13 +655,73 @@ class _ModelRequiringNumVideoFrames:
             "num_video_frames": num_video_frames,
             **kwargs,
         }
-        return {"action": [[0.0] * 7]}
+        cache_mode = str(kwargs.get("cache_mode", "video_kv"))
+        cuda_graph_mode = str(kwargs.get("cuda_graph_mode", "off"))
+        torch_compile_mode = str(kwargs.get("torch_compile_mode", "off"))
+        return {
+            "action": [[0.0] * 7],
+            "metadata": {
+                "dit_cache_enabled": cache_mode == "video_kv",
+                "dit_cache_mode": cache_mode,
+                "dit_cache_hook": "fastwam_video_kv_cache",
+                "num_inference_steps": int(kwargs.get("num_inference_steps", 0)),
+                "video_seq_len": 2,
+                "action_seq_len": action_horizon,
+                "cache_layers": 1 if cache_mode == "video_kv" else 0,
+                "cache_prefill_wall_ms": 0.5 if cache_mode == "video_kv" else None,
+                "denoise_wall_ms": 1.0,
+                "cache_bytes": 128 if cache_mode == "video_kv" else None,
+                "cuda_graph_enabled": cuda_graph_mode != "off",
+                "cuda_graph_mode": cuda_graph_mode,
+                "cuda_graph_hook": "fastwam_cuda_graph_action_body",
+                "cuda_graph_capture_success": False,
+                "cuda_graph_replay_count": 0,
+                "cuda_graph_fallback_reason": None,
+                "cuda_graph_shape_key": None,
+                "cuda_graph_capture_wall_ms": None,
+                "torch_compile_enabled": torch_compile_mode != "off",
+                "torch_compile_mode": torch_compile_mode,
+                "torch_compile_hook": "fastwam_torch_compile_action_body",
+                "torch_compile_success": False,
+                "torch_compile_fallback_reason": None,
+                "torch_compile_wall_ms": None,
+            },
+        }
 
     def to(self, device):
         return self
 
     def eval(self):
         return self
+
+
+class _FastWAMCacheHookMot:
+    def prefill_video_cache(self):
+        return None
+
+    def forward_action_with_video_cache(self):
+        return None
+
+
+class _ModelWithFastWAMCacheHook:
+    mot = _FastWAMCacheHookMot()
+
+    def infer_action(self, *, cache_mode="video_kv"):
+        return {"action": [[0.0] * 7]}
+
+
+class _ModelWithFastWAMCudaGraphHook:
+    mot = _FastWAMCacheHookMot()
+
+    def infer_action(self, *, cache_mode="video_kv", cuda_graph_mode="auto"):
+        return {"action": [[0.0] * 7]}
+
+
+class _ModelWithFastWAMTorchCompileHook:
+    mot = _FastWAMCacheHookMot()
+
+    def infer_action(self, *, cache_mode="video_kv", torch_compile_mode="auto"):
+        return {"action": [[0.0] * 7]}
 
 
 class _ModelWithInferJoint:

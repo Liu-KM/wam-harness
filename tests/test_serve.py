@@ -315,14 +315,13 @@ def test_serve_traces_preflight_before_backend_load_failure(tmp_path) -> None:
     assert len(trace_paths) == 1
     events = read_events(trace_paths[0])
     names = [event["event"] for event in events]
-    assert names[:4] == [
-        "serve_start",
-        "runtime_contract",
-        "preflight",
-        "error",
-    ]
-    contract = events[1]
-    readiness = events[2]
+    assert names[0] == "serve_start"
+    assert "optimization_profile_status" in names
+    assert "runtime_contract" in names
+    assert "preflight" in names
+    assert "error" in names
+    contract = [event for event in events if event["event"] == "runtime_contract"][0]
+    readiness = [event for event in events if event["event"] == "preflight"][0]
     assert contract["mode"] == "serve"
     assert contract["backend"] == "fastwam"
     assert contract["runtime_mode"] == "in_process"
@@ -332,8 +331,9 @@ def test_serve_traces_preflight_before_backend_load_failure(tmp_path) -> None:
     assert readiness["runtime_mode"] == "in_process"
     assert readiness["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness["upstream"]["status"] == "missing"
-    assert events[3]["stage"] == "preflight"
-    assert events[3]["recoverable"] is True
+    error = [event for event in events if event["event"] == "error"][0]
+    assert error["stage"] == "preflight"
+    assert error["recoverable"] is True
     assert events[-1]["event"] == "backend_close"
 
 

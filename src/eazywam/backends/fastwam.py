@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from eazywam.backends.native import (
     NativeBackendBase,
@@ -147,14 +147,24 @@ class FastWAMModelAdapter(NativeModelAdapter):
         checkpoint_path: Path | None,
         dataset_stats_path: Path | None,
         config: dict[str, Any],
+        dit_cache_params: dict[str, object],
         no_grad_factory: Callable[[], object],
         error_cls: type[FastWAMNativeBackendError],
+        cuda_graph_params: dict[str, object] | None = None,
+        cuda_graph_enabled: bool = False,
+        torch_compile_params: dict[str, object] | None = None,
+        torch_compile_enabled: bool = False,
     ) -> None:
         self.model = model
         self.cfg = cfg
         self.checkpoint_path = checkpoint_path
         self.dataset_stats_path = dataset_stats_path
         self.config = config
+        self.dit_cache_params = dit_cache_params
+        self.cuda_graph_params = cuda_graph_params or {}
+        self.cuda_graph_enabled = bool(cuda_graph_enabled)
+        self.torch_compile_params = torch_compile_params or {}
+        self.torch_compile_enabled = bool(torch_compile_enabled)
         self.no_grad_factory = no_grad_factory
         self.error_cls = error_cls
 
@@ -195,7 +205,14 @@ class FastWAMModelAdapter(NativeModelAdapter):
             "seed": _optional_int(self._config_value("seed", None)),
             "rand_device": str(self._evaluation_value("rand_device", "cpu")),
             "tiled": bool(self._evaluation_value("tiled", False)),
+            "cache_mode": self._dit_cache_mode(request),
         }
+        cuda_graph_mode = self._cuda_graph_mode(request)
+        if self._infer_action_accepts("cuda_graph_mode"):
+            infer_kwargs["cuda_graph_mode"] = cuda_graph_mode
+        torch_compile_mode = self._torch_compile_mode(request)
+        if self._infer_action_accepts("torch_compile_mode"):
+            infer_kwargs["torch_compile_mode"] = torch_compile_mode
         if (
             visualize_future_video
             or "num_video_frames" in inspect.signature(self.model.infer_action).parameters
@@ -209,7 +226,9 @@ class FastWAMModelAdapter(NativeModelAdapter):
                         "FastWAM EVALUATION.visualize_future_video=true requires "
                         "model.infer_joint, but the loaded model does not provide it."
                     )
-                raw_output = self.model.infer_joint(**infer_kwargs)
+                joint_kwargs = dict(infer_kwargs)
+                joint_kwargs.pop("cache_mode", None)
+                raw_output = self.model.infer_joint(**joint_kwargs)
                 return NativeModelCall(
                     raw_output=raw_output,
                     metadata={
@@ -219,12 +238,21 @@ class FastWAMModelAdapter(NativeModelAdapter):
                     },
                 )
             raw_output = self.model.infer_action(**infer_kwargs)
+            metadata = {
+                "fastwam_call": "infer_action",
+                "num_video_frames": infer_kwargs.get("num_video_frames"),
+                "cuda_graph_enabled": cuda_graph_mode != "off",
+                "cuda_graph_mode": cuda_graph_mode,
+                "cuda_graph_hook": "fastwam_cuda_graph_action_body",
+                "torch_compile_enabled": torch_compile_mode != "off",
+                "torch_compile_mode": torch_compile_mode,
+                "torch_compile_hook": "fastwam_torch_compile_action_body",
+            }
+            if isinstance(raw_output, dict) and isinstance(raw_output.get("metadata"), dict):
+                metadata.update(raw_output["metadata"])
             return NativeModelCall(
                 raw_output=raw_output,
-                metadata={
-                    "fastwam_call": "infer_action",
-                    "num_video_frames": infer_kwargs.get("num_video_frames"),
-                },
+                metadata=metadata,
             )
 
     def close(self) -> None:
@@ -260,6 +288,63 @@ class FastWAMModelAdapter(NativeModelAdapter):
         action_video_freq_ratio = int(self.cfg.data.train.action_video_freq_ratio)
         return (num_frames - 1) // action_video_freq_ratio + 1
 
+    def _dit_cache_mode(self, request: InferenceRequest) -> str:
+        configured = request.runtime_options.get("dit_cache_mode")
+        if configured is None:
+            configured = self.config.get("dit_cache_mode")
+        if configured is None:
+            configured = self._dit_cache_profile_mode()
+        mode = str(configured or "video_kv")
+        if mode not in {"video_kv", "recompute"}:
+            raise self.error_cls(
+                "FastWAM dit_cache mode must be one of: video_kv, recompute; "
+                f"got {mode!r}."
+            )
+        return mode
+
+    def _dit_cache_profile_mode(self) -> str:
+        if self.dit_cache_params.get("mode") is not None:
+            return str(self.dit_cache_params["mode"])
+        return "video_kv"
+
+    def _cuda_graph_mode(self, request: InferenceRequest) -> str:
+        configured = request.runtime_options.get("cuda_graph_mode")
+        if configured is None:
+            configured = self.config.get("cuda_graph_mode")
+        if configured is None and self.cuda_graph_enabled:
+            configured = self.cuda_graph_params.get("mode", "auto")
+        mode = _normalize_cuda_graph_mode(configured)
+        if mode not in {"off", "auto"}:
+            raise self.error_cls(
+                "FastWAM cuda_graph mode must be one of: off, auto; "
+                f"got {mode!r}."
+            )
+        return mode
+
+    def _torch_compile_mode(self, request: InferenceRequest) -> str:
+        configured = request.runtime_options.get("torch_compile_mode")
+        if configured is None:
+            configured = self.config.get("torch_compile_mode")
+        if configured is None and self.torch_compile_enabled:
+            configured = self.torch_compile_params.get("mode", "auto")
+        mode = _normalize_torch_compile_mode(configured)
+        if mode not in {"off", "auto", "default", "reduce-overhead", "max-autotune"}:
+            raise self.error_cls(
+                "FastWAM torch_compile mode must be one of: off, auto, default, "
+                f"reduce-overhead, max-autotune; got {mode!r}."
+            )
+        return mode
+
+    def _infer_action_accepts(self, name: str) -> bool:
+        try:
+            signature = inspect.signature(self.model.infer_action)
+        except (TypeError, ValueError):
+            return False
+        return name in signature.parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+
 
 class FastWAMBackend(NativeBackendBase):
     """Native FastWAM backend.
@@ -293,6 +378,17 @@ class FastWAMBackend(NativeBackendBase):
         "einops",
     )
     model_adapter_name = FastWAMModelAdapter.name
+    optimization_hooks: ClassVar[dict[str, str]] = {
+        **NativeBackendBase.optimization_hooks,
+        "dit_cache": "fastwam_video_kv_cache",
+        "cuda_graph": "fastwam_cuda_graph_action_body",
+        "torch_compile": "fastwam_torch_compile_action_body",
+    }
+    loaded_optimization_hooks: ClassVar[dict[str, str]] = {
+        "dit_cache": "fastwam_video_kv_cache",
+        "cuda_graph": "fastwam_cuda_graph_action_body",
+        "torch_compile": "fastwam_torch_compile_action_body",
+    }
 
     def __init__(self, manifest: Manifest, profiles: list[OptimizationProfile]) -> None:
         super().__init__(manifest, profiles, backend_label="FastWAM")
@@ -361,6 +457,11 @@ class FastWAMBackend(NativeBackendBase):
             checkpoint_path=self.checkpoint_path,
             dataset_stats_path=self.dataset_stats_path,
             config=dict(self.config),
+            dit_cache_params=self.profile_settings("dit_cache"),
+            cuda_graph_params=self.profile_settings("cuda_graph"),
+            cuda_graph_enabled=self.profile_enabled("cuda_graph"),
+            torch_compile_params=self.profile_settings("torch_compile"),
+            torch_compile_enabled=self.profile_enabled("torch_compile"),
             no_grad_factory=self.no_grad,
             error_cls=self.error_cls,
         )
@@ -378,6 +479,92 @@ class FastWAMBackend(NativeBackendBase):
         if isinstance(adapter, FastWAMModelAdapter):
             return adapter
         raise self.error_cls("FastWAM model is not loaded")
+
+    def _apply_loaded_optimization_profile(
+        self,
+        profile: OptimizationProfile,
+        planned_status: dict[str, object] | None,
+    ) -> dict[str, object]:
+        status = super()._apply_loaded_optimization_profile(profile, planned_status)
+        if status.get("state") != "applied":
+            return status
+
+        if profile.name == "cuda_graph":
+            if self._cuda_graph_hook_available():
+                return status
+            return {
+                **status,
+                "state": "fallback",
+                "hook": "fastwam_cuda_graph_action_body",
+                "reason": "cuda_graph_hook_unavailable",
+            }
+
+        if profile.name == "torch_compile":
+            if self._torch_compile_hook_available():
+                return status
+            return {
+                **status,
+                "state": "fallback",
+                "hook": "fastwam_torch_compile_action_body",
+                "reason": "torch_compile_hook_unavailable",
+            }
+
+        if profile.name != "dit_cache" or self._dit_cache_hook_available():
+            return status
+        return {
+            **status,
+            "state": "fallback",
+            "hook": "fastwam_video_kv_cache",
+            "reason": "cache_hook_unavailable",
+        }
+
+    def _dit_cache_hook_available(self) -> bool:
+        model = self.model
+        if model is None:
+            return False
+        mot = getattr(model, "mot", None)
+        infer_action = getattr(model, "infer_action", None)
+        if not callable(infer_action):
+            return False
+        try:
+            has_cache_mode = "cache_mode" in inspect.signature(infer_action).parameters
+        except (TypeError, ValueError):
+            has_cache_mode = False
+        return (
+            has_cache_mode
+            and callable(getattr(mot, "prefill_video_cache", None))
+            and callable(getattr(mot, "forward_action_with_video_cache", None))
+        )
+
+    def _cuda_graph_hook_available(self) -> bool:
+        if not self._dit_cache_hook_available():
+            return False
+        infer_action = getattr(self.model, "infer_action", None)
+        if not callable(infer_action):
+            return False
+        try:
+            signature = inspect.signature(infer_action)
+        except (TypeError, ValueError):
+            return False
+        return "cuda_graph_mode" in signature.parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
+
+    def _torch_compile_hook_available(self) -> bool:
+        if not self._dit_cache_hook_available():
+            return False
+        infer_action = getattr(self.model, "infer_action", None)
+        if not callable(infer_action):
+            return False
+        try:
+            signature = inspect.signature(infer_action)
+        except (TypeError, ValueError):
+            return False
+        return "torch_compile_mode" in signature.parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
 
     def inspect_upstream_repo(
         self,
@@ -411,7 +598,11 @@ class FastWAMBackend(NativeBackendBase):
         env_name = self.upstream_env_name(default_env=None)
         if not (self.config.get("upstream_dir") or os.environ.get(env_name)):
             return ()
+        config_name = str(self.config.get("config_name", "sim_libero"))
+        if not config_name.endswith(".yaml"):
+            config_name = f"{config_name}.yaml"
         paths = [
+            f"configs/{config_name}",
             "configs/train.yaml",
             *self._hydra_config_group_paths(),
         ]
@@ -591,6 +782,32 @@ def _get_config_value(config: object, key: str, default: Any) -> Any:
     if callable(getter):
         return getter(key, default)
     return getattr(config, key, default)
+
+
+def _normalize_cuda_graph_mode(value: object) -> str:
+    if value is True:
+        return "auto"
+    if value is False or value is None:
+        return "off"
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "auto"}:
+        return "auto"
+    if text in {"0", "false", "no", "off", "none"}:
+        return "off"
+    return text
+
+
+def _normalize_torch_compile_mode(value: object) -> str:
+    if value is True:
+        return "auto"
+    if value is False or value is None:
+        return "off"
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "auto"}:
+        return "auto"
+    if text in {"0", "false", "no", "off", "none"}:
+        return "off"
+    return text
 
 
 def _future_video_present(raw_output: object) -> bool:

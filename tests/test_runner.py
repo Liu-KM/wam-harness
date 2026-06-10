@@ -364,7 +364,12 @@ def test_runner_maps_reference_entry_to_native_input_observation(tmp_path) -> No
     assert contract["processor"] == "fastwam_libero"
     assert contract["workload"] == "single_observation"
     assert contract["model_adapter"] == "test_native_run_adapter"
-    assert contract["supported_optimizations"] == ["action_chunk_scheduling"]
+    assert contract["supported_optimizations"] == [
+        "action_chunk_scheduling",
+        "dit_cache",
+        "cuda_graph",
+        "torch_compile",
+    ]
     assert contract["optimization_profile_status"] == [
         {
             "name": "action_chunk_scheduling",
@@ -374,7 +379,25 @@ def test_runner_maps_reference_entry_to_native_input_observation(tmp_path) -> No
             "scope": "simulator_eval",
             "target": "workload",
             "state": "requested",
-        }
+        },
+        {
+            "name": "dit_cache",
+            "enabled": True,
+            "params": {"mode": "video_kv"},
+            "declared_supported": True,
+            "scope": "simulator_eval",
+            "target": "workload",
+            "state": "requested",
+        },
+        {
+            "name": "cuda_graph",
+            "enabled": True,
+            "params": {"mode": "auto", "capture": "action_body"},
+            "declared_supported": True,
+            "scope": "simulator_eval",
+            "target": "workload",
+            "state": "requested",
+        },
     ]
     replan = [event for event in events if event["event"] == "replan_start"][0]
     assert replan["observation_summary"]["image_keys"] == ["primary", "wrist"]
@@ -395,9 +418,13 @@ def test_runner_traces_preflight_before_backend_load_failure(tmp_path) -> None:
     assert len(trace_paths) == 1
     events = read_events(trace_paths[0])
     names = [event["event"] for event in events]
-    assert names[:4] == ["run_start", "runtime_contract", "preflight", "error"]
-    contract = events[1]
-    readiness = events[2]
+    assert names[0] == "run_start"
+    assert "optimization_profile_status" in names
+    assert "runtime_contract" in names
+    assert "preflight" in names
+    assert names[-2:] == ["error", "run_end"]
+    contract = [event for event in events if event["event"] == "runtime_contract"][0]
+    readiness = [event for event in events if event["event"] == "preflight"][0]
     assert contract["backend"] == "fastwam"
     assert contract["mode"] == "run"
     assert contract["runtime_mode"] == "in_process"
@@ -409,5 +436,6 @@ def test_runner_traces_preflight_before_backend_load_failure(tmp_path) -> None:
     assert readiness["runtime_loader"] == "fastwam_runtime_loader"
     assert readiness["model_adapter"] == "fastwam_model"
     assert readiness["upstream"]["status"] == "missing"
-    assert events[3]["stage"] == "preflight"
-    assert events[3]["recoverable"] is True
+    error = [event for event in events if event["event"] == "error"][0]
+    assert error["stage"] == "preflight"
+    assert error["recoverable"] is True

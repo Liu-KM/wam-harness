@@ -107,6 +107,20 @@ wam eval fastwam-libero \
   --cache-dir /path/to/wam-cache
 ```
 
+### Evaluate FastWAM In RoboTwin
+
+Run this inside a prepared FastWAM + RoboTwin runtime.
+
+```bash
+wam prepare fastwam-robotwin --cache-dir /path/to/wam-cache --download --asset eval
+
+wam eval fastwam-robotwin \
+  --workload robotwin-single-task \
+  --task-name click_alarmclock \
+  --num-episodes 1 \
+  --cache-dir /path/to/wam-cache
+```
+
 ### Inspect Traces
 
 ```bash
@@ -122,6 +136,7 @@ model-library entry.
 | Model id | Upstream | First command | Status |
 | --- | --- | --- | --- |
 | `fastwam-libero` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![Hugging Face](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-libero --download --asset eval` | First real integration target. SuperPod H800 single-task native eval, serve smoke, reference full-suite eval, and native full-suite sweep are run; native sweep is 9/10, and aligned task6 evidence shows native and reference both at 4/5. |
+| `fastwam-robotwin` | [![GitHub](https://img.shields.io/badge/GitHub-FastWAM-181717?logo=github)](https://github.com/yuantianyuan01/FastWAM) [![GitHub](https://img.shields.io/badge/GitHub-RoboTwin-181717?logo=github)](https://github.com/RoboTwin-Platform/RoboTwin) [![Hugging Face](https://img.shields.io/badge/HF-yuanty%2Ffastwam-FFD21E?logo=huggingface)](https://huggingface.co/yuanty/fastwam) | `wam prepare fastwam-robotwin --download --asset eval` | Second real FastWAM simulator target. SuperPod H800 single-task smoke, serve smoke, reference manager full-suite, and native full-suite are verified over 50 tasks x clean/randomized. Reference summary: 100/100 phases, clean mean 1.0, randomized mean 0.84. Native summary: 100/100 phases, structural failures 0, success rate 0.88. |
 | `cosmos-policy-libero` | [![GitHub](https://img.shields.io/badge/GitHub-Cosmos--Policy-181717?logo=github)](https://github.com/NVlabs/cosmos-policy) [![Hugging Face](https://img.shields.io/badge/HF-Cosmos--Policy--LIBERO-FFD21E?logo=huggingface)](https://huggingface.co/nvidia/Cosmos-Policy-LIBERO-Predict2-2B) | `wam info cosmos-policy-libero` | Native smoke and official-script parity integration started. |
 | `dreamzero-droid-sim` | [![GitHub](https://img.shields.io/badge/GitHub-DreamZero-181717?logo=github)](https://github.com/dreamzero0/dreamzero) [![Hugging Face](https://img.shields.io/badge/HF-DreamZero--DROID-FFD21E?logo=huggingface)](https://huggingface.co/GEAR-Dreams/DreamZero-DROID) [![Hugging Face](https://img.shields.io/badge/HF-DROID_sim_assets-FFD21E?logo=huggingface)](https://huggingface.co/owhan/DROID-sim-environments) | `wam info dreamzero-droid-sim` | Resident policy-server path started; DROID sim path requires a heavier multi-GPU runtime. |
 

@@ -116,6 +116,53 @@ only when the backend has actually applied the hook to the loaded runtime.
 Backends may report `fallback` with a `reason` when a planned profile cannot be
 activated.
 
+FastWAM `dit_cache` status uses `hook="fastwam_video_kv_cache"`. In the plan
+stage it should be `planned` when requested for `fastwam-libero` or
+`fastwam-robotwin`. In the post-load stage it should be `applied` only when the
+loaded model exposes the cache-mode-aware `infer_action()` and MoT video K/V
+cache hook; otherwise it should be `fallback` with a reason such as
+`backend_not_loaded` or `cache_hook_unavailable`.
+
+FastWAM `cuda_graph` status uses `hook="fastwam_cuda_graph_action_body"`. The
+first implementation only attempts to capture the action-body
+`mot.forward_action_with_video_cache()` path, and only when `dit_cache` is in
+`video_kv` mode. Capture failure, non-CUDA execution, unsupported model
+signatures, or shape changes should fall back to eager execution and remain
+trace-visible.
+
+FastWAM `torch_compile` status uses `hook="fastwam_torch_compile_action_body"`.
+The first implementation only attempts to compile the same action-body callable
+used by CUDA Graph. It is experimental and disabled by default; failures should
+fall back to eager execution and remain trace-visible. Request metadata should
+treat `torch_compile_success=true` as evidence that the compiled action-body
+path remained usable for that request; a runtime fallback should set it back to
+false and populate `torch_compile_fallback_reason`.
+
+FastWAM `inference_end.backend_metadata` may include request-local cache
+metadata:
+
+- `dit_cache_enabled`
+- `dit_cache_mode`: `video_kv` or `recompute`
+- `cuda_graph_enabled`
+- `cuda_graph_mode`: `off` or `auto`
+- `cuda_graph_capture_success`
+- `cuda_graph_replay_count`
+- `cuda_graph_fallback_reason`
+- `cuda_graph_shape_key`
+- `torch_compile_enabled`
+- `torch_compile_mode`: `off`, `auto`, `default`, `reduce-overhead`, or `max-autotune`
+- `torch_compile_success`
+- `torch_compile_fallback_reason`
+- `torch_compile_wall_ms`
+- `dit_cache_hook`: `fastwam_video_kv_cache`
+- `num_inference_steps`
+- `video_seq_len`
+- `action_seq_len`
+- `cache_layers`
+- `cache_prefill_wall_ms`
+- `denoise_wall_ms`
+- `cache_bytes`
+
 For `serve` mode, startup emits backend load/warmup/reset events before
 `serve_ready`. Each `/infer` request emits `serve_request_start` and
 `serve_request_end` with request timing, output shape, and action summary. Bad

@@ -1,3 +1,6 @@
+import time
+from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any, Optional, Sequence, Union
 
 import torch
@@ -8,11 +11,126 @@ from PIL import Image
 from fastwam.utils.logging_config import get_logger
 
 from .action_dit import ActionDiT
+from .cuda_graph import ActionBodyCudaGraphManager, CudaGraphRunResult
 from .helpers.loader import load_wan22_ti2v_5b_components
 from .mot import MoT
 from .schedulers.scheduler_continuous import WanContinuousFlowMatchScheduler
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class _VideoKVCacheState:
+    kv_cache: list[dict[str, torch.Tensor]]
+    attention_mask: torch.Tensor
+    video_seq_len: int
+    prefill_wall_ms: float
+    cache_bytes: int
+
+    @property
+    def layers(self) -> int:
+        return len(self.kv_cache)
+
+
+@dataclass
+class _CudaGraphRequestStats:
+    mode: str
+    enabled: bool
+    hook: str = "fastwam_cuda_graph_action_body"
+    capture_success: bool = False
+    replay_count: int = 0
+    fallback_reason: str | None = None
+    shape_key: dict[str, Any] | None = None
+    capture_wall_ms: float | None = None
+    disabled_for_request: bool = False
+
+    @classmethod
+    def create(cls, *, mode: str, cache_mode: str) -> "_CudaGraphRequestStats":
+        enabled = mode != "off" and cache_mode == "video_kv"
+        fallback_reason = None
+        if mode != "off" and cache_mode != "video_kv":
+            fallback_reason = "requires_video_kv_cache"
+        return cls(
+            mode=mode,
+            enabled=enabled,
+            fallback_reason=fallback_reason,
+            disabled_for_request=fallback_reason is not None,
+        )
+
+    def record(self, result: CudaGraphRunResult) -> None:
+        if result.shape_key is not None:
+            self.shape_key = result.shape_key
+        if result.capture_success:
+            self.capture_success = True
+        if result.replayed:
+            self.replay_count += 1
+        if result.capture_wall_ms is not None and self.capture_wall_ms is None:
+            self.capture_wall_ms = result.capture_wall_ms
+        if result.fallback_reason is not None:
+            self.fallback_reason = result.fallback_reason
+            self.disabled_for_request = True
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "cuda_graph_enabled": self.enabled,
+            "cuda_graph_mode": self.mode,
+            "cuda_graph_hook": self.hook,
+            "cuda_graph_capture_success": self.capture_success,
+            "cuda_graph_replay_count": self.replay_count,
+            "cuda_graph_fallback_reason": self.fallback_reason,
+            "cuda_graph_shape_key": self.shape_key,
+            "cuda_graph_capture_wall_ms": self.capture_wall_ms,
+        }
+
+
+@dataclass
+class _TorchCompileRequestStats:
+    mode: str
+    enabled: bool
+    hook: str = "fastwam_torch_compile_action_body"
+    success: bool = False
+    fallback_reason: str | None = None
+    compile_wall_ms: float | None = None
+    disabled_for_request: bool = False
+
+    @classmethod
+    def create(cls, *, mode: str, cache_mode: str) -> "_TorchCompileRequestStats":
+        enabled = mode != "off" and cache_mode == "video_kv"
+        fallback_reason = None
+        if mode != "off" and cache_mode != "video_kv":
+            fallback_reason = "requires_video_kv_cache"
+        return cls(
+            mode=mode,
+            enabled=enabled,
+            fallback_reason=fallback_reason,
+            disabled_for_request=fallback_reason is not None,
+        )
+
+    @property
+    def compile_mode(self) -> str:
+        if self.mode == "auto":
+            return "reduce-overhead"
+        return self.mode
+
+    def record_success(self, *, compile_wall_ms: float | None = None) -> None:
+        self.success = True
+        if compile_wall_ms is not None and self.compile_wall_ms is None:
+            self.compile_wall_ms = compile_wall_ms
+
+    def record_fallback(self, reason: str) -> None:
+        self.success = False
+        self.fallback_reason = reason
+        self.disabled_for_request = True
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "torch_compile_enabled": self.enabled,
+            "torch_compile_mode": self.mode,
+            "torch_compile_hook": self.hook,
+            "torch_compile_success": self.success,
+            "torch_compile_fallback_reason": self.fallback_reason,
+            "torch_compile_wall_ms": self.compile_wall_ms,
+        }
 
 
 class FastWAM(torch.nn.Module):
@@ -84,6 +202,9 @@ class FastWAM(torch.nn.Module):
         self.torch_dtype = torch_dtype
         self.loss_lambda_video = float(loss_lambda_video)
         self.loss_lambda_action = float(loss_lambda_action)
+        self._action_body_cuda_graph_manager: ActionBodyCudaGraphManager | None = None
+        self._action_body_compiled_fn: Callable[..., torch.Tensor] | None = None
+        self._action_body_compile_failed_reason: str | None = None
 
         self.to(self.device)
 
@@ -701,6 +822,9 @@ class FastWAM(torch.nn.Module):
         video_kv_cache: list[dict[str, torch.Tensor]],
         attention_mask: torch.Tensor,
         video_seq_len: int,
+        cuda_graph_stats: _CudaGraphRequestStats | None = None,
+        torch_compile_stats: _TorchCompileRequestStats | None = None,
+        cuda_graph_shape_metadata: dict[str, Any] | None = None,
     ) -> torch.Tensor:
         action_pre = self.action_expert.pre_dit(
             action_tokens=latents_action,
@@ -708,19 +832,182 @@ class FastWAM(torch.nn.Module):
             context=context,
             context_mask=context_mask,
         )
-        action_tokens = self.mot.forward_action_with_video_cache(
-            action_tokens=action_pre["tokens"],
-            action_freqs=action_pre["freqs"],
-            action_t_mod=action_pre["t_mod"],
-            action_context_payload={
+        action_body_kwargs = {
+            "action_tokens": action_pre["tokens"],
+            "action_freqs": action_pre["freqs"],
+            "action_t_mod": action_pre["t_mod"],
+            "action_context_payload": {
                 "context": action_pre["context"],
                 "mask": action_pre["context_mask"],
             },
-            video_kv_cache=video_kv_cache,
+            "video_kv_cache": video_kv_cache,
+            "attention_mask": attention_mask,
+            "video_seq_len": video_seq_len,
+        }
+        action_body_fn = self._action_body_callable(torch_compile_stats)
+        using_compiled_action_body = (
+            self._action_body_compiled_fn is not None
+            and action_body_fn is self._action_body_compiled_fn
+        )
+        action_tokens = None
+        if (
+            cuda_graph_stats is not None
+            and cuda_graph_stats.enabled
+            and not cuda_graph_stats.disabled_for_request
+        ):
+            graph_result = self._action_body_graph_manager().run(
+                action_body_fn,
+                shape_metadata=cuda_graph_shape_metadata or {},
+                **action_body_kwargs,
+            )
+            cuda_graph_stats.record(graph_result)
+            action_tokens = graph_result.output
+        if action_tokens is None:
+            try:
+                action_tokens = action_body_fn(**action_body_kwargs)
+            except Exception as exc:
+                if not using_compiled_action_body:
+                    raise
+                reason = f"call_failed:{type(exc).__name__}"
+                self._action_body_compile_failed_reason = reason
+                self._action_body_compiled_fn = None
+                if torch_compile_stats is not None:
+                    torch_compile_stats.record_fallback(reason)
+                action_tokens = self.mot.forward_action_with_video_cache(**action_body_kwargs)
+        return self.action_expert.post_dit(action_tokens, action_pre)
+
+    def _action_body_callable(
+        self,
+        torch_compile_stats: _TorchCompileRequestStats | None,
+    ) -> Callable[..., torch.Tensor]:
+        eager_fn = self.mot.forward_action_with_video_cache
+        if (
+            torch_compile_stats is None
+            or not torch_compile_stats.enabled
+            or torch_compile_stats.disabled_for_request
+        ):
+            return eager_fn
+        if self._action_body_compile_failed_reason is not None:
+            torch_compile_stats.record_fallback(self._action_body_compile_failed_reason)
+            return eager_fn
+        if self._action_body_compiled_fn is not None:
+            torch_compile_stats.record_success()
+            return self._action_body_compiled_fn
+        compiler = getattr(torch, "compile", None)
+        if not callable(compiler):
+            reason = "torch_compile_unavailable"
+            self._action_body_compile_failed_reason = reason
+            torch_compile_stats.record_fallback(reason)
+            return eager_fn
+        start = time.perf_counter()
+        try:
+            compiled = compiler(
+                eager_fn,
+                mode=torch_compile_stats.compile_mode,
+                fullgraph=False,
+                dynamic=False,
+            )
+        except Exception as exc:
+            reason = f"compile_failed:{type(exc).__name__}"
+            self._action_body_compile_failed_reason = reason
+            torch_compile_stats.record_fallback(reason)
+            return eager_fn
+        self._action_body_compiled_fn = compiled
+        torch_compile_stats.record_success(
+            compile_wall_ms=(time.perf_counter() - start) * 1000
+        )
+        return compiled
+
+    def _action_body_graph_manager(self) -> ActionBodyCudaGraphManager:
+        if self._action_body_cuda_graph_manager is None:
+            self._action_body_cuda_graph_manager = ActionBodyCudaGraphManager()
+        return self._action_body_cuda_graph_manager
+
+    @torch.no_grad()
+    def _prepare_video_kv_cache(
+        self,
+        *,
+        first_frame_latents: torch.Tensor,
+        latents_action: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        fuse_vae_embedding_in_latents: bool,
+    ) -> _VideoKVCacheState:
+        prefill_start = time.perf_counter()
+        timestep_video = torch.zeros(
+            (first_frame_latents.shape[0],),
+            dtype=first_frame_latents.dtype,
+            device=self.device,
+        )
+        video_pre = self.video_expert.pre_dit(
+            x=first_frame_latents,
+            timestep=timestep_video,
+            context=context,
+            context_mask=context_mask,
+            action=None,
+            fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+        )
+        video_seq_len = int(video_pre["tokens"].shape[1])
+        attention_mask = self._build_mot_attention_mask(
+            video_seq_len=video_seq_len,
+            action_seq_len=latents_action.shape[1],
+            video_tokens_per_frame=int(video_pre["meta"]["tokens_per_frame"]),
+            device=video_pre["tokens"].device,
+        )
+        kv_cache = self.mot.prefill_video_cache(
+            video_tokens=video_pre["tokens"],
+            video_freqs=video_pre["freqs"],
+            video_t_mod=video_pre["t_mod"],
+            video_context_payload={
+                "context": video_pre["context"],
+                "mask": video_pre["context_mask"],
+            },
+            video_attention_mask=attention_mask[:video_seq_len, :video_seq_len],
+        )
+        return _VideoKVCacheState(
+            kv_cache=kv_cache,
             attention_mask=attention_mask,
             video_seq_len=video_seq_len,
+            prefill_wall_ms=(time.perf_counter() - prefill_start) * 1000,
+            cache_bytes=_tensor_tree_nbytes(kv_cache),
         )
-        return self.action_expert.post_dit(action_tokens, action_pre)
+
+    @torch.no_grad()
+    def _predict_action_noise_step(
+        self,
+        *,
+        first_frame_latents: torch.Tensor,
+        latents_action: torch.Tensor,
+        timestep_action: torch.Tensor,
+        context: torch.Tensor,
+        context_mask: torch.Tensor,
+        fuse_vae_embedding_in_latents: bool,
+        cache_state: _VideoKVCacheState | None,
+        cuda_graph_stats: _CudaGraphRequestStats | None = None,
+        torch_compile_stats: _TorchCompileRequestStats | None = None,
+        cuda_graph_shape_metadata: dict[str, Any] | None = None,
+    ) -> torch.Tensor:
+        if cache_state is None:
+            return self._predict_action_noise(
+                first_frame_latents=first_frame_latents,
+                latents_action=latents_action,
+                timestep_action=timestep_action,
+                context=context,
+                context_mask=context_mask,
+                fuse_vae_embedding_in_latents=fuse_vae_embedding_in_latents,
+            )
+        return self._predict_action_noise_with_cache(
+            latents_action=latents_action,
+            timestep_action=timestep_action,
+            context=context,
+            context_mask=context_mask,
+                video_kv_cache=cache_state.kv_cache,
+                attention_mask=cache_state.attention_mask,
+                video_seq_len=cache_state.video_seq_len,
+                cuda_graph_stats=cuda_graph_stats,
+                torch_compile_stats=torch_compile_stats,
+                cuda_graph_shape_metadata=cuda_graph_shape_metadata,
+            )
 
     @torch.no_grad()
     def infer_joint(
@@ -918,8 +1205,26 @@ class FastWAM(torch.nn.Module):
         seed: Optional[int] = None,
         rand_device: str = "cpu",
         tiled: bool = False,
+        cache_mode: str = "video_kv",
+        cuda_graph_mode: str = "off",
+        torch_compile_mode: str = "off",
     ) -> dict[str, Any]:
         self.eval()
+        if cache_mode not in {"video_kv", "recompute"}:
+            raise ValueError(
+                "`cache_mode` must be one of: video_kv, recompute; "
+                f"got {cache_mode!r}."
+            )
+        if cuda_graph_mode not in {"off", "auto"}:
+            raise ValueError(
+                "`cuda_graph_mode` must be one of: off, auto; "
+                f"got {cuda_graph_mode!r}."
+            )
+        if torch_compile_mode not in {"off", "auto", "default", "reduce-overhead", "max-autotune"}:
+            raise ValueError(
+                "`torch_compile_mode` must be one of: off, auto, default, "
+                f"reduce-overhead, max-autotune; got {torch_compile_mode!r}."
+            )
         if str(getattr(self.video_expert, "video_attention_mask_mode", "")) != "first_frame_causal":
             raise ValueError(
                 "`infer_action` requires `video_attention_mask_mode='first_frame_causal'`."
@@ -990,36 +1295,38 @@ class FastWAM(torch.nn.Module):
                 proprio=proprio,
             )
 
-        timestep_video = torch.zeros(
-            (first_frame_latents.shape[0],),
-            dtype=first_frame_latents.dtype,
-            device=self.device,
+        cache_state = None
+        if cache_mode == "video_kv":
+            cache_state = self._prepare_video_kv_cache(
+                first_frame_latents=first_frame_latents,
+                latents_action=latents_action,
+                context=context,
+                context_mask=context_mask,
+                fuse_vae_embedding_in_latents=fuse_flag,
+            )
+        cuda_graph_stats = _CudaGraphRequestStats.create(
+            mode=cuda_graph_mode,
+            cache_mode=cache_mode,
         )
-        video_pre = self.video_expert.pre_dit(
-            x=first_frame_latents,
-            timestep=timestep_video,
-            context=context,
-            context_mask=context_mask,
-            action=None,
-            fuse_vae_embedding_in_latents=fuse_flag,
+        torch_compile_stats = _TorchCompileRequestStats.create(
+            mode=torch_compile_mode,
+            cache_mode=cache_mode,
         )
-        video_seq_len = int(video_pre["tokens"].shape[1])
-        attention_mask = self._build_mot_attention_mask(
-            video_seq_len=video_seq_len,
-            action_seq_len=latents_action.shape[1],
-            video_tokens_per_frame=int(video_pre["meta"]["tokens_per_frame"]),
-            device=video_pre["tokens"].device,
-        )
-        video_kv_cache = self.mot.prefill_video_cache(
-            video_tokens=video_pre["tokens"],
-            video_freqs=video_pre["freqs"],
-            video_t_mod=video_pre["t_mod"],
-            video_context_payload={
-                "context": video_pre["context"],
-                "mask": video_pre["context_mask"],
-            },
-            video_attention_mask=attention_mask[:video_seq_len, :video_seq_len],
-        )
+        cuda_graph_shape_metadata = {
+            "cache_mode": cache_mode,
+            "torch_compile_mode": (
+                torch_compile_stats.mode if torch_compile_stats.enabled else "off"
+            ),
+            "image_hw": [int(height), int(width)],
+            "action_horizon": int(action_horizon),
+            "action_seq_len": int(latents_action.shape[1]),
+            "video_seq_len": cache_state.video_seq_len if cache_state is not None else None,
+            "context_len": int(context.shape[1]),
+            "proprio": proprio is not None,
+            "tiled": bool(tiled),
+            "device": str(latents_action.device),
+            "dtype": str(latents_action.dtype).replace("torch.", ""),
+        }
 
         infer_timesteps_action, infer_deltas_action = self.infer_action_scheduler.build_inference_schedule(
             num_inference_steps=num_inference_steps,
@@ -1027,24 +1334,43 @@ class FastWAM(torch.nn.Module):
             dtype=latents_action.dtype,
             shift_override=sigma_shift,
         )
+        denoise_start = time.perf_counter()
         for step_t_action, step_delta_action in zip(infer_timesteps_action, infer_deltas_action):
             timestep_action = step_t_action.unsqueeze(0).to(dtype=latents_action.dtype, device=self.device)
 
-            pred_action_posi = self._predict_action_noise_with_cache(
+            pred_action = self._predict_action_noise_step(
+                first_frame_latents=first_frame_latents,
                 latents_action=latents_action,
                 timestep_action=timestep_action,
                 context=context,
                 context_mask=context_mask,
-                video_kv_cache=video_kv_cache,
-                attention_mask=attention_mask,
-                video_seq_len=video_seq_len,
+                fuse_vae_embedding_in_latents=fuse_flag,
+                cache_state=cache_state,
+                cuda_graph_stats=cuda_graph_stats,
+                torch_compile_stats=torch_compile_stats,
+                cuda_graph_shape_metadata=cuda_graph_shape_metadata,
             )
-            pred_action = pred_action_posi
-
             latents_action = self.infer_action_scheduler.step(pred_action, step_delta_action, latents_action)
+        denoise_wall_ms = (time.perf_counter() - denoise_start) * 1000
 
         return {
             "action": latents_action[0].detach().to(device="cpu", dtype=torch.float32),
+            "metadata": {
+                "dit_cache_enabled": cache_mode == "video_kv",
+                "dit_cache_mode": cache_mode,
+                "dit_cache_hook": "fastwam_video_kv_cache",
+                "num_inference_steps": int(num_inference_steps),
+                "video_seq_len": cache_state.video_seq_len if cache_state is not None else None,
+                "action_seq_len": int(latents_action.shape[1]),
+                "cache_layers": cache_state.layers if cache_state is not None else 0,
+                "cache_prefill_wall_ms": (
+                    cache_state.prefill_wall_ms if cache_state is not None else None
+                ),
+                "denoise_wall_ms": denoise_wall_ms,
+                "cache_bytes": cache_state.cache_bytes if cache_state is not None else None,
+                **cuda_graph_stats.to_metadata(),
+                **torch_compile_stats.to_metadata(),
+            },
         }
 
     @torch.no_grad()
@@ -1120,3 +1446,13 @@ class FastWAM(torch.nn.Module):
 
     def forward(self, *args, **kwargs):
         return self.training_loss(*args, **kwargs)
+
+
+def _tensor_tree_nbytes(value: object) -> int:
+    if isinstance(value, torch.Tensor):
+        return int(value.numel() * value.element_size())
+    if isinstance(value, dict):
+        return sum(_tensor_tree_nbytes(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return sum(_tensor_tree_nbytes(item) for item in value)
+    return 0

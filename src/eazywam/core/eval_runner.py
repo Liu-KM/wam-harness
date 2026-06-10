@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import time
@@ -127,7 +128,11 @@ class EvalRunner:
                 "upstream evaluator."
             )
 
-        profiles = self.registry.build_optimization_profiles(manifest, enabled_opts or [])
+        profiles = self.registry.build_optimization_profiles(
+            manifest,
+            enabled_opts or [],
+            include_defaults=True,
+        )
         run_id = uuid.uuid4().hex[:12]
         output_dir = (Path(trace_dir) / run_id) if trace_dir is not None else Path("runs") / run_id
         trace_path = output_dir / "trace.jsonl"
@@ -233,6 +238,22 @@ class EvalRunner:
                 raise
             elapsed_ms = (time.perf_counter() - start) * 1000
             status = "ok" if process.returncode == 0 else "error"
+            try:
+                metrics = self._load_summary_metrics(
+                    manifest=manifest,
+                    eval_workload=eval_workload,
+                    profiles=profiles,
+                    run_id=run_id,
+                    output_dir=output_dir,
+                    cache_dir=cache_dir,
+                    upstream_dir=upstream_dir,
+                    dry_run=dry_run,
+                    overrides=overrides or {},
+                )
+            except Exception as exc:
+                if process.returncode == 0:
+                    raise
+                metrics = {"summary_metrics_error": str(exc)}
             trace.write(
                 "external_eval_end",
                 return_code=process.returncode,
@@ -240,6 +261,7 @@ class EvalRunner:
                 memory=memory_snapshot(),
                 stdout_path=str(stdout_path),
                 stderr_path=str(stderr_path),
+                metrics=metrics,
             )
             trace.write(
                 "run_end",
@@ -260,6 +282,7 @@ class EvalRunner:
             stdout_path=stdout_path,
             stderr_path=stderr_path,
             runtime_info=runtime_info,
+            metrics=metrics,
         )
 
     def plan_command(
@@ -530,6 +553,56 @@ class EvalRunner:
         if isinstance(workload_value, dict):
             merged.update(workload_value)
         return merged
+
+    def _load_summary_metrics(
+        self,
+        *,
+        manifest: Manifest,
+        eval_workload: _EvalWorkload,
+        profiles: list[OptimizationProfile],
+        run_id: str,
+        output_dir: Path,
+        cache_dir: str | Path | None,
+        upstream_dir: str | Path | None,
+        dry_run: bool,
+        overrides: dict[str, str],
+    ) -> JsonDict:
+        path_template = eval_workload.config.get("summary_metrics_path")
+        if path_template is None:
+            path_template = manifest.eval.get("summary_metrics_path")
+        if path_template is None:
+            return {}
+        if not isinstance(path_template, str):
+            raise EvalRunnerError(
+                f"{manifest.id} eval summary_metrics_path must be a string"
+            )
+
+        context = self._build_context(
+            manifest=manifest,
+            eval_workload=eval_workload,
+            profiles=profiles,
+            run_id=run_id,
+            output_dir=output_dir,
+            cache_dir=cache_dir,
+            upstream_dir=upstream_dir,
+            dry_run=dry_run,
+            overrides=overrides,
+        )
+        formatter = _StrictFormatDict({key: str(value) for key, value in context.items()})
+        metrics_path = Path(path_template.format_map(formatter))
+        if not metrics_path.exists():
+            return {"summary_metrics_path": str(metrics_path), "summary_metrics_found": False}
+
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise EvalRunnerError(
+                f"{manifest.id} eval summary metrics must be a JSON object: {metrics_path}"
+            )
+        return {
+            "summary_metrics_path": str(metrics_path),
+            "summary_metrics_found": True,
+            **payload,
+        }
 
     def _resolve_upstream_dir(
         self,

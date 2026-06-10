@@ -108,15 +108,34 @@ defaults:
 optimizations:
   supported:
     - action_chunk_scheduling
+    - dit_cache
+    - cuda_graph
+    - torch_compile
   profiles:
     action_chunk_scheduling:
       enabled: true
       scope: simulator_eval
       params: {}
+    dit_cache:
+      enabled: true
+      scope: native_backend
+      params:
+        mode: video_kv
+    cuda_graph:
+      enabled: true
+      scope: native_backend
+      params:
+        mode: auto
+        capture: action_body
+    torch_compile:
+      enabled: false
+      scope: native_backend
+      params:
+        mode: auto
+        target: action_body
   measured: []
   unsupported:
     vla_cache: Requires the OpenVLA model family.
-    dit_cache: Not exposed by the FastWAM LIBERO reference evaluators.
 
 deployment:
   reference_path: official_script
@@ -139,6 +158,7 @@ deployment:
     - Native full-suite sweep over task_id=0..9 passes structurally on SuperPod H800 with 9/10 successes; task_id=6 fails after 700 steps.
     - After aligning seed=42 and num_steps_wait=30, repeated task_id=6 evidence on SuperPod H800 with num_trials=5 reports native 4/5 and reference single-task 4/5.
     - Native-vs-reference parity is not statistically established yet.
+    - FastWAM dit_cache is a request-local video K/V cache toggle. The default mode is video_kv; mode=recompute is for ablation only.
 
 eval:
   simulator: LIBERO

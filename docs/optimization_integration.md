@@ -136,6 +136,62 @@ The upstream survey was performed from shallow clones under
 | FastVLA | Combines 4-bit kernels, Triton action heads, action chunking, BC pretraining, and RL. | Mixed training recipe and runtime optimization. | Medium-high: useful as a model/backend target, not an early toggle. |
 | TEAM-VLA | Training-free token compression direction. | `training_free_inference` | Unknown until a backend entrypoint is validated. |
 
+FastWAM `dit_cache` is now the first FastWAM-native ablation profile. Its
+public profile name is `dit_cache`, while the backend hook is
+`fastwam_video_kv_cache`. The profile is scoped to one request-local
+`infer_action()` call: `video_kv` mode prefills video K/V once and uses
+`_predict_action_noise_with_cache()`, while `recompute` mode skips prefill and
+uses `_predict_action_noise()` on each denoising step. This profile does not
+implement cross-replan cache, VLA-Cache static token reuse, token pruning, step
+skipping, or `torch.compile`.
+
+FastWAM `cuda_graph` is the default `auto` FastWAM-native profile. Its backend
+hook is `fastwam_cuda_graph_action_body`. The first supported capture target is
+only
+`mot.forward_action_with_video_cache()` after video K/V has been prefetched;
+`pre_dit`, `post_dit`, VAE/image encoding, prompt/context handling, and the
+Python denoise loop stay eager. The profile requires `dit_cache.mode=video_kv`
+and must fall back cleanly with trace metadata when CUDA, shape stability, or
+capture support is unavailable. Set `cuda_graph_mode=off` for eager-cache
+ablations.
+
+SuperPod H800 job `450394` is the first maintainer evidence for this profile:
+on FastWAM LIBERO `task_id=0`, `num_trials=1`, `num_inference_steps=10`, CUDA
+Graph produced `1.91x` mean total inference latency speedup and `2.78x` mean
+denoise-loop speedup over the default `video_kv` path, with no capture fallback
+and unchanged task success.
+
+SuperPod H800 job `450401` repeated the comparison on FastWAM RoboTwin
+`click_alarmclock`, `demo_randomized`, `num_episodes=1`. CUDA Graph produced
+`1.90x` mean total inference latency speedup over the eager cached path, with
+both runs succeeding and no capture fallback.
+
+FastWAM `torch_compile` is the Phase-4 experimental companion profile. It uses
+hook `fastwam_torch_compile_action_body`, targets the same action-body callable,
+and remains disabled by default until SuperPod evidence shows that compile
+overhead and graph interaction are worthwhile.
+
+SuperPod H800 job `450449` tested the Phase-4 combination on FastWAM LIBERO
+`task_id=0`, `num_trials=1`, `num_inference_steps=10`, with `max_steps=100` to
+limit simulator wall time. The baseline cached path was compared with default
+CUDA Graph and CUDA Graph plus `--opt torch_compile`. CUDA Graph still improved
+mean total inference latency by `1.65x` and mean denoise latency by `2.38x`
+over the eager cached path. The `torch_compile` combination triggered
+`InductorError` fallback on the first request, inflated mean total latency to
+`4687.86ms` versus `206.44ms` for CUDA Graph alone, and is therefore kept as an
+experimental opt-in profile rather than a default FastWAM acceleration path.
+
+Trace metadata from FastWAM model calls should include `dit_cache_enabled`,
+`dit_cache_mode`, `dit_cache_hook`, `num_inference_steps`, `video_seq_len`,
+`action_seq_len`, `cache_layers`, and best-effort timing/size fields such as
+`cache_prefill_wall_ms`, `denoise_wall_ms`, and `cache_bytes`. When
+`cuda_graph` is requested, metadata should also include `cuda_graph_enabled`,
+`cuda_graph_mode`, `cuda_graph_capture_success`, `cuda_graph_replay_count`,
+`cuda_graph_fallback_reason`, and `cuda_graph_shape_key`. When
+`torch_compile` is requested, metadata should include `torch_compile_enabled`,
+`torch_compile_mode`, `torch_compile_success`, `torch_compile_fallback_reason`,
+and `torch_compile_wall_ms`.
+
 VLA-Cache is the cleanest first candidate because it already exposes a direct
 on/off flag. FASTER is valuable for action-chunk scheduling and streaming
 contracts, but its method includes training-time assumptions, so the first
